@@ -1,0 +1,15 @@
+.env.local
+.env.*.local
+
+/app/vendor/
+/app/var/
+!/app/var/.gitkeep
+
+/nlp/.venv/
+/nlp/__pycache__/
+/nlp/.pytest_cache/
+*.pyc
+
+.idea/
+.vscode/
+.DS_Store

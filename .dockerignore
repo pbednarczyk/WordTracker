@@ -1,0 +1,9 @@
+.git
+.idea
+.vscode
+app/vendor
+app/var
+nlp/.venv
+nlp/__pycache__
+nlp/.pytest_cache
+*.pyc

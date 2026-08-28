@@ -1,0 +1,11 @@
+parameters:
+
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+        bind:
+            string $nlpHealthUrl: '%env(NLP_HEALTH_URL)%'
+
+    App\:
+        resource: '../src/'

@@ -1,0 +1,74 @@
+services:
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: wordtracker-nginx
+    depends_on:
+      - app
+    ports:
+      - "8080:80"
+    volumes:
+      - ./app:/var/www/app
+      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - wordtracker
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: wordtracker-app
+    depends_on:
+      db:
+        condition: service_healthy
+      nlp:
+        condition: service_started
+    environment:
+      APP_ENV: dev
+      APP_DEBUG: "1"
+      APP_SECRET: local-dev-secret-change-me
+      DATABASE_URL: postgresql://wordtracker:wordtracker@db:5432/wordtracker?serverVersion=17&charset=utf8
+      NLP_HEALTH_URL: http://nlp:8000/health
+    volumes:
+      - ./app:/var/www/app
+      - app_vendor:/var/www/app/vendor
+      - app_var:/var/www/app/var
+    networks:
+      - wordtracker
+
+  db:
+    image: postgres:17-alpine
+    container_name: wordtracker-db
+    environment:
+      POSTGRES_DB: wordtracker
+      POSTGRES_USER: wordtracker
+      POSTGRES_PASSWORD: wordtracker
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wordtracker -d wordtracker"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    networks:
+      - wordtracker
+
+  nlp:
+    build:
+      context: .
+      dockerfile: docker/nlp/Dockerfile
+    container_name: wordtracker-nlp
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./nlp:/srv/nlp
+    networks:
+      - wordtracker
+
+networks:
+  wordtracker:
+    name: wordtracker
+
+volumes:
+  db_data:
+  app_vendor:
+  app_var:
