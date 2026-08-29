@@ -1,6 +1,6 @@
 COMPOSE=docker compose
 
-.PHONY: install start stop restart logs test shell php-test nlp-test
+.PHONY: install start stop restart logs test shell php-test nlp-test migrate schema-validate
 
 install:
 	$(COMPOSE) build
@@ -17,6 +17,12 @@ restart: stop start
 
 logs:
 	$(COMPOSE) logs -f
+
+migrate:
+	$(COMPOSE) exec app php bin/console doctrine:migrations:migrate --no-interaction
+
+schema-validate:
+	$(COMPOSE) exec app php bin/console doctrine:schema:validate
 
 test: php-test nlp-test
 

@@ -39,6 +39,8 @@ make start     # start the local environment
 make stop      # stop containers
 make restart   # restart containers
 make logs      # follow container logs
+make migrate   # run Doctrine migrations
+make schema-validate # validate Doctrine mapping and database schema
 make test      # run PHP and Python tests
 ```
 
@@ -47,6 +49,8 @@ Direct alternatives without `make`:
 ```bash
 docker compose build
 docker compose up -d
+docker compose exec app php bin/console doctrine:migrations:migrate --no-interaction
+docker compose exec app php bin/console doctrine:schema:validate
 docker compose run --rm -e APP_ENV=test app ./vendor/bin/phpunit
 docker compose run --rm nlp pytest
 docker compose down
@@ -65,6 +69,43 @@ Symfony
 ```
 
 The Symfony container reaches PostgreSQL as `db:5432` and the NLP service as `http://nlp:8000/health`.
+
+## Data Model
+
+Current scope is the MVP 1 persistence model only. There is no NLP analysis, upload flow, coverage calculation, SRS, or publication UI yet.
+
+```text
+Publication
+   |
+   |-- VocabularyOccurrence -- VocabularyItem
+   |
+   `-- PublicationVocabulary - VocabularyItem
+```
+
+- `Publication` stores a source material such as a book, article, comic, document, web page, or other text-bearing item.
+- `VocabularyItem` stores the global vocabulary item. It is the source of truth and is not deleted when a publication is deleted.
+- `VocabularyOccurrence` stores one concrete occurrence of a word in one publication.
+- `PublicationVocabulary` stores the aggregate relation between one publication and one vocabulary item, including the occurrence count.
+
+`VocabularyItem` identity is unique by:
+
+```text
+language + lemma + partOfSpeech
+```
+
+`partOfSpeech` is a non-null string and defaults to `UNKNOWN`, so the database can enforce uniqueness without PostgreSQL `NULL` edge cases.
+
+Run migrations:
+
+```bash
+make migrate
+```
+
+Validate mapping and schema:
+
+```bash
+make schema-validate
+```
 
 ## Troubleshooting
 
