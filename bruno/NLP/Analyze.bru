@@ -1,0 +1,34 @@
+meta {
+  name: Analyze
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{nlpBaseUrl}}/analyze
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "text": "The children were running down the corridor."
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.language: eq en
+  res.body.token_count: eq 8
+  res.body.word_count: eq 7
+  res.body.tokens[1].text: eq children
+  res.body.tokens[1].lemma: eq child
+  res.body.tokens[1].pos: eq NOUN
+  res.body.tokens[1].sentence: eq The children were running down the corridor.
+  res.body.tokens[1].position: eq 4
+  res.body.tokens[1].is_proper_noun: eq false
+}

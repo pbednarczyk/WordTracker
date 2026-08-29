@@ -7,6 +7,7 @@ ENV PYTHONUNBUFFERED=1
 
 COPY nlp/requirements.txt ./
 RUN python -m pip install --no-cache-dir -r requirements.txt
+RUN python -m spacy download en_core_web_sm
 
 COPY nlp ./
 

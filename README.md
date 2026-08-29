@@ -30,6 +30,7 @@ http://localhost:8080
 - Symfony application: `http://localhost:8080`
 - NLP healthcheck from inside Docker: `http://nlp:8000/health`
 - NLP healthcheck from host: `http://localhost:8000/health`
+- NLP Swagger UI: `http://localhost:8000/docs`
 
 ## Useful Commands
 
@@ -69,6 +70,108 @@ Symfony
 ```
 
 The Symfony container reaches PostgreSQL as `db:5432` and the NLP service as `http://nlp:8000/health`.
+
+## NLP Service
+
+The NLP service is a separate FastAPI application in `nlp/`. It uses spaCy with the lightweight English model:
+
+```text
+en_core_web_sm
+```
+
+The Docker image installs both spaCy and the model automatically during build.
+
+### Healthcheck
+
+```http
+GET /health
+```
+
+Response:
+
+```json
+{
+  "status": "ok",
+  "service": "wordtracker-nlp"
+}
+```
+
+### Analyze Text
+
+```http
+POST /analyze
+Content-Type: application/json
+```
+
+Request:
+
+```json
+{
+  "text": "The children were running down the corridor."
+}
+```
+
+Response shape:
+
+```json
+{
+  "language": "en",
+  "token_count": 8,
+  "word_count": 7,
+  "unique_lemma_count": 7,
+  "tokens": [
+    {
+      "text": "children",
+      "lemma": "child",
+      "pos": "NOUN",
+      "sentence": "The children were running down the corridor.",
+      "position": 4,
+      "is_proper_noun": false
+    }
+  ]
+}
+```
+
+Only alphabetic word tokens are returned in `tokens`; punctuation, whitespace, symbols, URLs, and numbers are omitted. Stopwords are not filtered. `position` is the character offset of the token in the original input.
+
+Input text must not be blank. Payloads over `1,000,000` UTF-8 bytes return `413 Payload Too Large`.
+
+Swagger UI is available at:
+
+```text
+http://localhost:8000/docs
+```
+
+## Bruno API Collection
+
+The API contract is also maintained as a Bruno collection in `bruno/`. Update it in the same change whenever a public HTTP endpoint is added, removed, renamed, or its request/response contract changes.
+
+Open it locally:
+
+1. Start the stack:
+
+```bash
+docker compose up -d
+```
+
+2. Open Bruno.
+3. Choose `Open Collection`.
+4. Select the repository `bruno/` directory.
+5. Select the `Local` environment.
+
+The `Local` environment defines:
+
+```text
+nlpBaseUrl = http://localhost:8000
+appBaseUrl = http://localhost:8080
+```
+
+Current requests:
+
+- `NLP / Health`: `GET {{nlpBaseUrl}}/health`
+- `NLP / Analyze`: `POST {{nlpBaseUrl}}/analyze`
+
+The requests include assertions for the current response contract.
 
 ## Data Model
 

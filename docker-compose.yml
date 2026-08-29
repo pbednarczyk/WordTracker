@@ -63,6 +63,7 @@ services:
       - "8000:8000"
     volumes:
       - ./nlp:/srv/nlp
+      - ./fixtures:/srv/fixtures:ro
     networks:
       - wordtracker
 
