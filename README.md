@@ -25,6 +25,23 @@ Open the application at:
 http://localhost:8080
 ```
 
+## Using WordTracker
+
+1. Open:
+
+```text
+http://localhost:8080
+```
+
+2. Choose `Add publication`.
+3. Enter title, optional author, type, language, and paste the text.
+4. Click `Create`.
+5. On the publication details page, click `Analyze publication`.
+6. Review the vocabulary table with lemma, POS, occurrences, and status.
+
+Re-analyzing a publication uses the same details page action and replaces that
+publication's previous analysis rows without duplicating vocabulary entries.
+
 ## URLs
 
 - Symfony application: `http://localhost:8080`

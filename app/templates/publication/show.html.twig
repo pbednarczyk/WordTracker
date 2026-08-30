@@ -1,0 +1,86 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ publication.title }} - WordTracker{% endblock %}
+
+{% block body %}
+    <section class="page-header">
+        <div>
+            <h1>{{ publication.title }}</h1>
+            <p class="muted">
+                Type: {{ publication.type.value|capitalize }}
+                &nbsp; Language: {{ publication.language }}
+                &nbsp; Author: {{ publication.author ?: '-' }}
+            </p>
+        </div>
+        <form method="post" action="{{ path('publication_analyze', { id: publication.id }) }}">
+            <input type="hidden" name="_token" value="{{ csrf_token('analyze_publication_' ~ publication.id) }}">
+            <button class="button button--primary" type="submit">
+                {{ publication.analyzedAt ? 'Re-analyze' : 'Analyze publication' }}
+            </button>
+        </form>
+    </section>
+
+    {% if publication.analyzedAt %}
+        <section class="grid">
+            <div class="metric">
+                <span class="metric__label">Unique vocabulary</span>
+                <span class="metric__value">{{ summary.uniqueVocabulary }}</span>
+            </div>
+            <div class="metric">
+                <span class="metric__label">Vocabulary occurrences</span>
+                <span class="metric__value">{{ summary.vocabularyOccurrences }}</span>
+            </div>
+            <div class="metric">
+                <span class="metric__label">Analyzed at</span>
+                <span class="metric__value">{{ publication.analyzedAt|date('Y-m-d H:i') }}</span>
+            </div>
+        </section>
+    {% else %}
+        <section class="panel">
+            <h2>Status</h2>
+            <p class="muted">Not analyzed</p>
+        </section>
+    {% endif %}
+
+    {% if textPreview %}
+        <section class="panel">
+            <h2>Text preview</h2>
+            <p class="preview">{{ textPreview }}</p>
+        </section>
+    {% endif %}
+
+    {% if publication.analyzedAt %}
+        <section>
+            <h2>Vocabulary</h2>
+            {% if vocabulary is empty %}
+                <div class="empty">No vocabulary rows were produced for this publication.</div>
+            {% else %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Word</th>
+                            <th>POS</th>
+                            <th>Occurrences</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in vocabulary %}
+                            {% set item = row.vocabularyItem %}
+                            <tr>
+                                <td>{{ item.lemma }}</td>
+                                <td>{{ item.partOfSpeech }}</td>
+                                <td>{{ row.occurrences }}</td>
+                                <td>
+                                    <span class="badge {{ item.status.value == 'KNOWN' ? 'badge--known' : 'badge--unknown' }}">
+                                        {{ item.status.value }}
+                                    </span>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% endif %}
+        </section>
+    {% endif %}
+{% endblock %}

@@ -17,4 +17,16 @@ final class PublicationRepository extends ServiceEntityRepository
     {
         parent::__construct($registry, Publication::class);
     }
+
+    /**
+     * @return list<Publication>
+     */
+    public function findAllOrderedByCreatedAt(): array
+    {
+        return $this->createQueryBuilder('p')
+            ->orderBy('p.createdAt', 'DESC')
+            ->addOrderBy('p.id', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
 }

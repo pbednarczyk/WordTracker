@@ -1,0 +1,44 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Publications - WordTracker{% endblock %}
+
+{% block body %}
+    <section class="page-header">
+        <div>
+            <h1>Publications</h1>
+            <p class="muted">Texts added to your vocabulary index.</p>
+        </div>
+        <a class="button button--primary" href="{{ path('publication_new') }}">Add publication</a>
+    </section>
+
+    {% if publications is empty %}
+        <section class="empty">
+            <h2>No publications yet.</h2>
+            <p class="muted">Add your first publication.</p>
+            <a class="button button--primary" href="{{ path('publication_new') }}">Add publication</a>
+        </section>
+    {% else %}
+        <table>
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Type</th>
+                    <th>Language</th>
+                    <th>Created</th>
+                    <th>Analyzed</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for publication in publications %}
+                    <tr>
+                        <td><a href="{{ path('publication_show', { id: publication.id }) }}">{{ publication.title }}</a></td>
+                        <td>{{ publication.type.value }}</td>
+                        <td>{{ publication.language }}</td>
+                        <td>{{ publication.createdAt|date('Y-m-d') }}</td>
+                        <td>{{ publication.analyzedAt ? 'yes' : 'no' }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    {% endif %}
+{% endblock %}

@@ -1,69 +1,34 @@
-<!doctype html>
-<html lang="en">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1">
-        <title>WordTracker</title>
-        <style>
-            body {
-                margin: 0;
-                font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-                background: #f7f7f4;
-                color: #1f2933;
-            }
+{% extends 'base.html.twig' %}
 
-            main {
-                width: min(680px, calc(100% - 32px));
-                margin: 64px auto;
-            }
+{% block title %}WordTracker{% endblock %}
 
-            h1 {
-                margin: 0 0 24px;
-                font-size: 40px;
-                font-weight: 700;
-            }
-
-            dl {
-                display: grid;
-                grid-template-columns: minmax(140px, 1fr) auto;
-                gap: 12px 24px;
-                margin: 0;
-                padding: 24px;
-                border: 1px solid #d8dee4;
-                border-radius: 8px;
-                background: #ffffff;
-            }
-
-            dt,
-            dd {
-                margin: 0;
-                font-size: 18px;
-            }
-
-            dd {
-                font-weight: 700;
-            }
-
-            .ok {
-                color: #116329;
-            }
-
-            .error {
-                color: #a40e26;
-            }
-        </style>
-    </head>
-    <body>
-        <main>
+{% block body %}
+    <section class="page-header">
+        <div>
             <h1>WordTracker</h1>
-            <dl>
-                <dt>Symfony</dt>
-                <dd class="ok">OK</dd>
-                <dt>PostgreSQL</dt>
-                <dd class="{{ database_ok ? 'ok' : 'error' }}">{{ database_ok ? 'OK' : 'ERROR' }}</dd>
-                <dt>NLP service</dt>
-                <dd class="{{ nlp_ok ? 'ok' : 'error' }}">{{ nlp_ok ? 'OK' : 'ERROR' }}</dd>
-            </dl>
-        </main>
-    </body>
-</html>
+            <p class="muted">Track the vocabulary you actually encounter.</p>
+        </div>
+        <div class="actions">
+            <a class="button" href="{{ path('publication_index') }}">Publications</a>
+            <a class="button button--primary" href="{{ path('publication_new') }}">Add publication</a>
+        </div>
+    </section>
+
+    <section class="panel">
+        <h2>System</h2>
+        <dl class="grid">
+            <div class="metric">
+                <dt class="metric__label">Symfony</dt>
+                <dd class="metric__value badge badge--known">OK</dd>
+            </div>
+            <div class="metric">
+                <dt class="metric__label">PostgreSQL</dt>
+                <dd class="metric__value badge {{ database_ok ? 'badge--known' : 'flash--error' }}">{{ database_ok ? 'OK' : 'ERROR' }}</dd>
+            </div>
+            <div class="metric">
+                <dt class="metric__label">NLP service</dt>
+                <dd class="metric__value badge {{ nlp_ok ? 'badge--known' : 'flash--error' }}">{{ nlp_ok ? 'OK' : 'ERROR' }}</dd>
+            </div>
+        </dl>
+    </section>
+{% endblock %}

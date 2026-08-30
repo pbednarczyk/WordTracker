@@ -1,0 +1,55 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Add Publication - WordTracker{% endblock %}
+
+{% block body %}
+    <section class="page-header">
+        <div>
+            <h1>Add publication</h1>
+            <p class="muted">Create the publication first, then run analysis from its detail page.</p>
+        </div>
+    </section>
+
+    <section class="panel">
+        {{ form_start(form) }}
+            {{ form_errors(form) }}
+
+            <div class="form-grid">
+                <div class="form-row">
+                    {{ form_label(form.title) }}
+                    {{ form_widget(form.title) }}
+                    <div class="form-errors">{{ form_errors(form.title) }}</div>
+                </div>
+
+                <div class="form-row">
+                    {{ form_label(form.author) }}
+                    {{ form_widget(form.author) }}
+                    <div class="form-errors">{{ form_errors(form.author) }}</div>
+                </div>
+
+                <div class="form-row">
+                    {{ form_label(form.type) }}
+                    {{ form_widget(form.type) }}
+                    <div class="form-errors">{{ form_errors(form.type) }}</div>
+                </div>
+
+                <div class="form-row">
+                    {{ form_label(form.language) }}
+                    {{ form_widget(form.language) }}
+                    <div class="form-errors">{{ form_errors(form.language) }}</div>
+                </div>
+
+                <div class="form-row form-row--wide">
+                    {{ form_label(form.rawText) }}
+                    {{ form_widget(form.rawText) }}
+                    <div class="form-errors">{{ form_errors(form.rawText) }}</div>
+                </div>
+            </div>
+
+            <div class="actions" style="margin-top: 20px;">
+                <button class="button button--primary" type="submit">Create</button>
+                <a class="button" href="{{ path('publication_index') }}">Cancel</a>
+            </div>
+        {{ form_end(form) }}
+    </section>
+{% endblock %}

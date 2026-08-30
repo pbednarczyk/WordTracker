@@ -2,6 +2,7 @@ framework:
     secret: '%env(APP_SECRET)%'
     handle_all_throwables: true
     http_method_override: false
+    session: true
     php_errors:
         log: true
 
