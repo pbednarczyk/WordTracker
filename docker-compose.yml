@@ -32,7 +32,6 @@ services:
     volumes:
       - ./app:/var/www/app
       - ./fixtures:/var/www/fixtures:ro
-      - app_vendor:/var/www/app/vendor
       - app_var:/var/www/app/var
     networks:
       - wordtracker
@@ -75,5 +74,4 @@ networks:
 
 volumes:
   db_data:
-  app_vendor:
   app_var:
