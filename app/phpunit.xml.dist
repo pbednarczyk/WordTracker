@@ -13,6 +13,7 @@
         <env name="APP_DEBUG" value="1"/>
         <env name="APP_SECRET" value="test-secret"/>
         <env name="DATABASE_URL" value="postgresql://wordtracker:wordtracker@db:5432/wordtracker?serverVersion=17&amp;charset=utf8"/>
+        <env name="NLP_BASE_URL" value="http://nlp:8000"/>
         <env name="NLP_HEALTH_URL" value="http://nlp:8000/health"/>
 
         <!-- ###+ symfony/framework-bundle ### -->

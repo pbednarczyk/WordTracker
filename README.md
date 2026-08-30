@@ -71,6 +71,50 @@ Symfony
 
 The Symfony container reaches PostgreSQL as `db:5432` and the NLP service as `http://nlp:8000/health`.
 
+## Publication Analysis Pipeline
+
+The first complete analysis flow stores vocabulary data from a publication raw text:
+
+```text
+Publication.rawText
+  |
+Symfony AnalyzePublicationHandler
+  |
+POST http://nlp:8000/analyze
+  |
+tokens + lemmas + POS + sentence offsets
+  |
+VocabularyItem
+VocabularyOccurrence
+PublicationVocabulary
+  |
+PostgreSQL
+```
+
+`VocabularyItem` is global and unique by `language + lemma + partOfSpeech`. `VocabularyOccurrence` stores each non-proper-noun occurrence for one publication. `PublicationVocabulary` stores per-publication aggregate counts.
+
+Proper nouns returned by NLP as `is_proper_noun = true` are ignored by the vocabulary pipeline. Re-analyzing a publication deletes only that publication's previous `VocabularyOccurrence` and `PublicationVocabulary` rows, then writes the new analysis in one database transaction. Existing `VocabularyItem` rows and their statuses are kept.
+
+Analyze an existing publication:
+
+```bash
+docker compose exec app php bin/console wordtracker:publication:analyze <publication-id>
+```
+
+Create and analyze the development fixture from `fixtures/sample.txt`:
+
+```bash
+docker compose exec app php bin/console wordtracker:fixture:analyze
+```
+
+Useful database checks:
+
+```bash
+docker compose exec app php bin/console doctrine:query:sql "SELECT id, title, analyzed_at FROM publication ORDER BY id DESC LIMIT 5"
+docker compose exec app php bin/console doctrine:query:sql "SELECT lemma, part_of_speech, status FROM vocabulary_item ORDER BY lemma LIMIT 50"
+docker compose exec app php bin/console doctrine:query:sql "SELECT vi.lemma, vi.part_of_speech, pv.occurrences FROM publication_vocabulary pv JOIN vocabulary_item vi ON vi.id = pv.vocabulary_item_id ORDER BY pv.occurrences DESC LIMIT 20"
+```
+
 ## NLP Service
 
 The NLP service is a separate FastAPI application in `nlp/`. It uses spaCy with the lightweight English model:
@@ -175,7 +219,7 @@ The requests include assertions for the current response contract.
 
 ## Data Model
 
-Current scope is the MVP 1 persistence model only. There is no NLP analysis, upload flow, coverage calculation, SRS, or publication UI yet.
+Current scope includes the MVP 1 persistence model and backend NLP publication analysis. There is no upload flow, coverage calculation, SRS, or publication UI yet.
 
 ```text
 Publication

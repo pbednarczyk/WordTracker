@@ -6,6 +6,11 @@ services:
         autoconfigure: true
         bind:
             string $nlpHealthUrl: '%env(NLP_HEALTH_URL)%'
+            string $nlpBaseUrl: '%env(NLP_BASE_URL)%'
+            string $fixturesDir: '%kernel.project_dir%/../fixtures'
 
     App\:
         resource: '../src/'
+
+    App\Nlp\TextAnalyzerInterface:
+        alias: App\Nlp\HttpTextAnalyzer

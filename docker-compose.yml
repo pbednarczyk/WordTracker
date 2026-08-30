@@ -27,9 +27,11 @@ services:
       APP_DEBUG: "1"
       APP_SECRET: local-dev-secret-change-me
       DATABASE_URL: postgresql://wordtracker:wordtracker@db:5432/wordtracker?serverVersion=17&charset=utf8
+      NLP_BASE_URL: http://nlp:8000
       NLP_HEALTH_URL: http://nlp:8000/health
     volumes:
       - ./app:/var/www/app
+      - ./fixtures:/var/www/fixtures:ro
       - app_vendor:/var/www/app/vendor
       - app_var:/var/www/app/var
     networks:
