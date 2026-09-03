@@ -95,6 +95,37 @@ docker compose run --rm nlp pytest
 docker compose down
 ```
 
+## Test Database
+
+Development and PHPUnit use separate PostgreSQL databases on the same local
+server:
+
+```text
+Development DB: wordtracker
+PHPUnit DB:     wordtracker_test
+```
+
+`APP_ENV=test` is configured to use `wordtracker_test`. The test workflow creates
+that database if needed, runs migrations against it, and then runs PHPUnit:
+
+```bash
+make php-test
+```
+
+Equivalent Docker Compose commands:
+
+```bash
+docker compose run --rm -e APP_ENV=test app php bin/console doctrine:database:create --if-not-exists --env=test
+docker compose run --rm -e APP_ENV=test app php bin/console doctrine:migrations:migrate --no-interaction --env=test
+docker compose run --rm -e APP_ENV=test app ./vendor/bin/phpunit
+```
+
+Tests may destructively reset only `wordtracker_test`. Reset helpers verify the
+active database name before running `TRUNCATE` and fail immediately if the
+connection points anywhere else.
+
+Never point `APP_ENV=test` to `wordtracker`.
+
 ## Architecture
 
 ```text

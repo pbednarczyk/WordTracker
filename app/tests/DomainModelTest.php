@@ -18,6 +18,8 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 final class DomainModelTest extends KernelTestCase
 {
+    use DatabaseResetTrait;
+
     private EntityManagerInterface $entityManager;
 
     protected function setUp(): void
@@ -215,10 +217,4 @@ final class DomainModelTest extends KernelTestCase
         return $item;
     }
 
-    private function resetDatabase(): void
-    {
-        $this->entityManager->getConnection()->executeStatement(
-            'TRUNCATE TABLE publication_vocabulary, vocabulary_occurrence, vocabulary_item, publication RESTART IDENTITY CASCADE',
-        );
-    }
 }

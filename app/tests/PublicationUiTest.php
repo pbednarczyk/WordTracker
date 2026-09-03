@@ -19,6 +19,8 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
 final class PublicationUiTest extends WebTestCase
 {
+    use DatabaseResetTrait;
+
     private KernelBrowser $client;
     private EntityManagerInterface $entityManager;
 
@@ -374,12 +376,6 @@ final class PublicationUiTest extends WebTestCase
         return (int) $this->entityManager->getConnection()->fetchOne(sprintf('SELECT COUNT(*) FROM %s', $table));
     }
 
-    private function resetDatabase(): void
-    {
-        $this->entityManager->getConnection()->executeStatement(
-            'TRUNCATE TABLE publication_vocabulary, vocabulary_occurrence, vocabulary_item, publication RESTART IDENTITY CASCADE',
-        );
-    }
 }
 
 final class UiStaticAnalyzer implements TextAnalyzerInterface

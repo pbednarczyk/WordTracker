@@ -1,6 +1,6 @@
 COMPOSE=docker compose
 
-.PHONY: install start stop restart logs test shell php-test nlp-test migrate schema-validate
+.PHONY: install start stop restart logs test shell php-test nlp-test test-db migrate schema-validate
 
 install:
 	$(COMPOSE) build
@@ -26,7 +26,11 @@ schema-validate:
 
 test: php-test nlp-test
 
-php-test:
+test-db:
+	$(COMPOSE) run --rm -e APP_ENV=test app php bin/console doctrine:database:create --if-not-exists --env=test
+	$(COMPOSE) run --rm -e APP_ENV=test app php bin/console doctrine:migrations:migrate --no-interaction --env=test
+
+php-test: test-db
 	$(COMPOSE) run --rm -e APP_ENV=test app ./vendor/bin/phpunit
 
 nlp-test:

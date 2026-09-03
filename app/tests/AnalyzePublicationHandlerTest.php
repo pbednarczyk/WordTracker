@@ -20,6 +20,8 @@ use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
 final class AnalyzePublicationHandlerTest extends KernelTestCase
 {
+    use DatabaseResetTrait;
+
     private EntityManagerInterface $entityManager;
     private VocabularyItemRepository $vocabularyItemRepository;
 
@@ -264,12 +266,6 @@ final class AnalyzePublicationHandlerTest extends KernelTestCase
         return $occurrences === false ? null : (int) $occurrences;
     }
 
-    private function resetDatabase(): void
-    {
-        $this->entityManager->getConnection()->executeStatement(
-            'TRUNCATE TABLE publication_vocabulary, vocabulary_occurrence, vocabulary_item, publication RESTART IDENTITY CASCADE',
-        );
-    }
 }
 
 final class StaticAnalyzer implements TextAnalyzerInterface

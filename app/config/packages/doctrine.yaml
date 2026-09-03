@@ -37,3 +37,8 @@ when@prod:
                     adapter: cache.app
                 doctrine.system_cache_pool:
                     adapter: cache.system
+
+when@test:
+    doctrine:
+        dbal:
+            url: 'postgresql://wordtracker:wordtracker@db:5432/wordtracker_test?serverVersion=17&charset=utf8'
