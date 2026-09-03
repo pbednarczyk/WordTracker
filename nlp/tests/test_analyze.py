@@ -63,6 +63,24 @@ def test_analyze_marks_proper_nouns() -> None:
     assert {"Eiffel", "Paris"} <= proper_nouns
 
 
+def test_analyze_returns_entity_types() -> None:
+    payload = analyze("Tony Stark visited Paris.")
+
+    assert token_by_text(payload, "Tony")["entity_type"] == "PERSON"
+    assert token_by_text(payload, "Stark")["entity_type"] == "PERSON"
+    assert token_by_text(payload, "Paris")["entity_type"] == "GPE"
+    assert token_by_text(payload, "visited")["entity_type"] is None
+
+
+def test_analyze_keeps_reluctant_hero_ethics_as_non_entity_title_phrase() -> None:
+    payload = analyze("Reluctant Hero Ethics")
+
+    assert token_by_text(payload, "Reluctant")["pos"] == "PROPN"
+    assert token_by_text(payload, "Reluctant")["entity_type"] is None
+    assert token_by_text(payload, "Hero")["entity_type"] is None
+    assert token_by_text(payload, "Ethics")["entity_type"] is None
+
+
 def test_analyze_omits_punctuation() -> None:
     payload = analyze("Hello, world!")
     token_texts = [token["text"] for token in payload["tokens"]]

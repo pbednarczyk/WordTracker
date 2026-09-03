@@ -23,6 +23,7 @@ class AnalyzedToken(BaseModel):
     text: str
     lemma: str
     pos: str
+    entity_type: str | None
     sentence: str
     position: int
     is_proper_noun: bool

@@ -168,6 +168,7 @@ final class PublicationUiTest extends WebTestCase
             text: $text,
             lemma: $lemma,
             pos: $pos,
+            entityType: null,
             sentence: 'The children were running down the corridor.',
             position: $position,
             isProperNoun: false,

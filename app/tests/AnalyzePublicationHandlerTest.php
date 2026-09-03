@@ -38,29 +38,37 @@ final class AnalyzePublicationHandlerTest extends KernelTestCase
         $this->resetDatabase();
     }
 
-    public function testPersistsVocabularyAnalysisAndSkipsProperNouns(): void
+    public function testPersistsVocabularyAnalysisAndSkipsNamedEntities(): void
     {
-        $publication = $this->persistPublication('The children were running down the corridor. Alice watched.');
+        $publication = $this->persistPublication('Reluctant Hero Ethics. Tony Stark visited Paris.');
         $handler = $this->handler(new StaticAnalyzer([
-            $this->token('children', 'child', 'NOUN', 4),
-            $this->token('were', 'be', 'AUX', 13),
-            $this->token('running', 'run', 'VERB', 18),
-            $this->token('corridor', 'corridor', 'NOUN', 35),
-            $this->token('Alice', 'Alice', 'PROPN', 45, true),
+            $this->token('Reluctant', 'Reluctant', 'PROPN', 0),
+            $this->token('Hero', 'Hero', 'PROPN', 10),
+            $this->token('Ethics', 'Ethics', 'PROPN', 15),
+            $this->token('Tony', 'Tony', 'PROPN', 23, 'PERSON'),
+            $this->token('Stark', 'Stark', 'PROPN', 28, 'PERSON'),
+            $this->token('visited', 'visit', 'VERB', 34),
+            $this->token('Paris', 'Paris', 'PROPN', 42, 'GPE'),
         ]));
 
         $result = $handler($publication);
         $this->entityManager->clear();
 
-        self::assertSame(5, $result->tokenCount);
-        self::assertSame(5, $result->wordCount);
+        self::assertSame(7, $result->tokenCount);
+        self::assertSame(7, $result->wordCount);
         self::assertSame(4, $result->vocabularyOccurrences);
         self::assertSame(4, $result->uniqueVocabularyItems);
-        self::assertSame(1, $result->ignoredProperNouns);
+        self::assertSame(3, $result->ignoredNamedEntities);
         self::assertSame(4, $this->countRows('vocabulary_occurrence'));
         self::assertSame(4, $this->countRows('publication_vocabulary'));
         self::assertSame(4, $this->countRows('vocabulary_item'));
-        self::assertNull($this->vocabularyItemRepository->findOneByIdentity('en', 'Alice', 'PROPN'));
+        self::assertNotNull($this->vocabularyItemRepository->findOneByIdentity('en', 'Reluctant', 'PROPN'));
+        self::assertNotNull($this->vocabularyItemRepository->findOneByIdentity('en', 'Hero', 'PROPN'));
+        self::assertNotNull($this->vocabularyItemRepository->findOneByIdentity('en', 'Ethics', 'PROPN'));
+        self::assertNotNull($this->vocabularyItemRepository->findOneByIdentity('en', 'visit', 'VERB'));
+        self::assertNull($this->vocabularyItemRepository->findOneByIdentity('en', 'Tony', 'PROPN'));
+        self::assertNull($this->vocabularyItemRepository->findOneByIdentity('en', 'Stark', 'PROPN'));
+        self::assertNull($this->vocabularyItemRepository->findOneByIdentity('en', 'Paris', 'PROPN'));
 
         $reloadedPublication = $this->entityManager->find(Publication::class, $publication->getId());
         self::assertNotNull($reloadedPublication?->getAnalyzedAt());
@@ -191,12 +199,14 @@ final class AnalyzePublicationHandlerTest extends KernelTestCase
         string $lemma,
         string $pos,
         int $position,
+        ?string $entityType = null,
         bool $isProperNoun = false,
     ): AnalyzedToken {
         return new AnalyzedToken(
             text: $text,
             lemma: $lemma,
             pos: $pos,
+            entityType: $entityType,
             sentence: 'The children were running down the corridor.',
             position: $position,
             isProperNoun: $isProperNoun,

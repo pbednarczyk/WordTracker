@@ -11,7 +11,7 @@ final readonly class AnalyzePublicationResult
         public int $wordCount,
         public int $vocabularyOccurrences,
         public int $uniqueVocabularyItems,
-        public int $ignoredProperNouns,
+        public int $ignoredNamedEntities,
     ) {
     }
 }

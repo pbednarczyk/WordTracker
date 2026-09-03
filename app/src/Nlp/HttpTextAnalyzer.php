@@ -80,13 +80,14 @@ final readonly class HttpTextAnalyzer implements TextAnalyzerInterface
      */
     private function mapToken(array $payload, int $index): AnalyzedToken
     {
-        foreach (['text', 'lemma', 'pos', 'sentence', 'position', 'is_proper_noun'] as $field) {
+        foreach (['text', 'lemma', 'pos', 'entity_type', 'sentence', 'position', 'is_proper_noun'] as $field) {
             if (!array_key_exists($field, $payload)) {
                 throw new TextAnalyzerException(sprintf('NLP analyzer token %d is missing "%s".', $index, $field));
             }
         }
 
         if (!is_string($payload['text']) || !is_string($payload['lemma']) || !is_string($payload['pos'])
+            || (!is_string($payload['entity_type']) && $payload['entity_type'] !== null)
             || !is_string($payload['sentence']) || !is_int($payload['position'])
             || !is_bool($payload['is_proper_noun'])) {
             throw new TextAnalyzerException(sprintf('NLP analyzer token %d has invalid field types.', $index));
@@ -96,6 +97,7 @@ final readonly class HttpTextAnalyzer implements TextAnalyzerInterface
             text: $payload['text'],
             lemma: $payload['lemma'],
             pos: $payload['pos'],
+            entityType: $payload['entity_type'],
             sentence: $payload['sentence'],
             position: $payload['position'],
             isProperNoun: $payload['is_proper_noun'],

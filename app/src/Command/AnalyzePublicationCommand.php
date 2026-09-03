@@ -59,7 +59,7 @@ final class AnalyzePublicationCommand extends Command
             ['Words', (string) $result->wordCount],
             ['Vocabulary occurrences', (string) $result->vocabularyOccurrences],
             ['Unique vocabulary items', (string) $result->uniqueVocabularyItems],
-            ['Ignored proper nouns', (string) $result->ignoredProperNouns],
+            ['Ignored named entities', (string) $result->ignoredNamedEntities],
         ]);
 
         return Command::SUCCESS;

@@ -28,6 +28,7 @@ assert {
   res.body.tokens[1].text: eq children
   res.body.tokens[1].lemma: eq child
   res.body.tokens[1].pos: eq NOUN
+  res.body.tokens[1].entity_type: eq null
   res.body.tokens[1].sentence: eq The children were running down the corridor.
   res.body.tokens[1].position: eq 4
   res.body.tokens[1].is_proper_noun: eq false

@@ -19,9 +19,23 @@ final readonly class AnalyzePublicationHandler
     public function __construct(
         private TextAnalyzerInterface $textAnalyzer,
         private EntityManagerInterface $entityManager,
-        private VocabularyItemRepository $vocabularyItemRepository,
+    private VocabularyItemRepository $vocabularyItemRepository,
     ) {
     }
+
+    private const IGNORED_ENTITY_TYPES = [
+        'PERSON' => true,
+        'GPE' => true,
+        'ORG' => true,
+        'LOC' => true,
+        'NORP' => true,
+        'FAC' => true,
+        'PRODUCT' => true,
+        'EVENT' => true,
+        'WORK_OF_ART' => true,
+        'LAW' => true,
+        'LANGUAGE' => true,
+    ];
 
     public function __invoke(Publication $publication): AnalyzePublicationResult
     {
@@ -42,12 +56,12 @@ final readonly class AnalyzePublicationHandler
 
             $itemsByIdentity = [];
             $aggregation = [];
-            $ignoredProperNouns = 0;
+            $ignoredNamedEntities = 0;
             $vocabularyOccurrences = 0;
 
             foreach ($analysis->tokens as $token) {
-                if ($token->isProperNoun) {
-                    ++$ignoredProperNouns;
+                if ($this->shouldIgnoreToken($token)) {
+                    ++$ignoredNamedEntities;
                     continue;
                 }
 
@@ -85,9 +99,18 @@ final readonly class AnalyzePublicationHandler
                 wordCount: $analysis->wordCount,
                 vocabularyOccurrences: $vocabularyOccurrences,
                 uniqueVocabularyItems: count($aggregation),
-                ignoredProperNouns: $ignoredProperNouns,
+                ignoredNamedEntities: $ignoredNamedEntities,
             );
         });
+    }
+
+    private function shouldIgnoreToken(AnalyzedToken $token): bool
+    {
+        if ($token->entityType === null) {
+            return false;
+        }
+
+        return self::IGNORED_ENTITY_TYPES[$token->entityType] ?? false;
     }
 
     private function deleteExistingAnalysis(Publication $publication): void

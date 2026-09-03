@@ -108,9 +108,9 @@ PublicationVocabulary
 PostgreSQL
 ```
 
-`VocabularyItem` is global and unique by `language + lemma + partOfSpeech`. `VocabularyOccurrence` stores each non-proper-noun occurrence for one publication. `PublicationVocabulary` stores per-publication aggregate counts.
+`VocabularyItem` is global and unique by `language + lemma + partOfSpeech`. `VocabularyOccurrence` stores each vocabulary occurrence for one publication after named-entity filtering. `PublicationVocabulary` stores per-publication aggregate counts.
 
-Proper nouns returned by NLP as `is_proper_noun = true` are ignored by the vocabulary pipeline. Re-analyzing a publication deletes only that publication's previous `VocabularyOccurrence` and `PublicationVocabulary` rows, then writes the new analysis in one database transaction. Existing `VocabularyItem` rows and their statuses are kept.
+Tokens whose `entity_type` is a named-entity category such as `PERSON`, `GPE`, `ORG`, `LOC`, or `NORP` are ignored by the vocabulary pipeline. `PROPN` by itself does not cause a token to be ignored. Re-analyzing a publication deletes only that publication's previous `VocabularyOccurrence` and `PublicationVocabulary` rows, then writes the new analysis in one database transaction. Existing `VocabularyItem` rows and their statuses are kept.
 
 Analyze an existing publication:
 
@@ -185,6 +185,7 @@ Response shape:
       "text": "children",
       "lemma": "child",
       "pos": "NOUN",
+      "entity_type": null,
       "sentence": "The children were running down the corridor.",
       "position": 4,
       "is_proper_noun": false
@@ -193,7 +194,7 @@ Response shape:
 }
 ```
 
-Only alphabetic word tokens are returned in `tokens`; punctuation, whitespace, symbols, URLs, and numbers are omitted. Stopwords are not filtered. `position` is the character offset of the token in the original input.
+Only alphabetic word tokens are returned in `tokens`; punctuation, whitespace, symbols, URLs, and numbers are omitted. Stopwords are not filtered. `position` is the character offset of the token in the original input. `entity_type` is the spaCy named-entity label for the token or `null` when the token is not part of a named entity.
 
 Input text must not be blank. Payloads over `1,000,000` UTF-8 bytes return `413 Payload Too Large`.
 
@@ -236,7 +237,7 @@ The requests include assertions for the current response contract.
 
 ## Data Model
 
-Current scope includes the MVP 1 persistence model and backend NLP publication analysis. There is no upload flow, coverage calculation, SRS, or publication UI yet.
+Current scope includes the MVP 1 persistence model, backend NLP publication analysis, and the first Twig UI for creating and analyzing publications. There is no upload flow, coverage calculation, or SRS yet.
 
 ```text
 Publication

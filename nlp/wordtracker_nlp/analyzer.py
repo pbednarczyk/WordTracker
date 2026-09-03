@@ -29,6 +29,7 @@ class TextAnalyzer:
                     text=token.text,
                     lemma=lemma,
                     pos=token.pos_,
+                    entity_type=self._entity_type(token),
                     sentence=sentence,
                     position=token.idx,
                     is_proper_noun=is_proper_noun,
@@ -50,3 +51,43 @@ class TextAnalyzer:
             return lemma
 
         return lemma.lower()
+
+    def _entity_type(self, token) -> str | None:
+        entity_type = token.ent_type_ or None
+        if entity_type != "ORG":
+            return entity_type
+
+        span = next(
+            (entity for entity in token.doc.ents if entity.start <= token.i < entity.end),
+            None,
+        )
+        if span is None:
+            return entity_type
+
+        if len(span) <= 1:
+            return entity_type
+
+        organization_markers = {
+            "agency",
+            "association",
+            "bank",
+            "bureau",
+            "company",
+            "corp",
+            "corporation",
+            "council",
+            "foundation",
+            "group",
+            "inc",
+            "institute",
+            "ltd",
+            "ministry",
+            "university",
+        }
+        has_organization_marker = any(part.text.lower().strip(".") in organization_markers for part in span)
+        looks_like_title_phrase = all(part.is_alpha and part.text.istitle() for part in span)
+
+        if looks_like_title_phrase and not has_organization_marker:
+            return None
+
+        return entity_type

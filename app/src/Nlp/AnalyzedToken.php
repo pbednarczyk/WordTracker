@@ -10,6 +10,7 @@ final readonly class AnalyzedToken
         public string $text,
         public string $lemma,
         public string $pos,
+        public ?string $entityType,
         public string $sentence,
         public int $position,
         public bool $isProperNoun,
