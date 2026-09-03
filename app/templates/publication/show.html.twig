@@ -122,9 +122,9 @@
                     <tbody>
                         {% for row in vocabulary %}
                             {% set item = row.vocabularyItem %}
-                            <tr>
+                            <tr class="vocabulary-row" data-vocabulary-row>
                                 <td class="checkbox-column">
-                                    <input type="checkbox" name="ids[]" value="{{ item.id }}" form="bulk-status-form">
+                                    <input type="checkbox" name="ids[]" value="{{ item.id }}" form="bulk-status-form" data-vocabulary-checkbox>
                                 </td>
                                 <td>{{ item.lemma }}</td>
                                 <td>{{ item.partOfSpeech }}</td>
@@ -156,9 +156,30 @@
     {% endif %}
 
     <script>
+        const syncRowSelection = (checkbox) => {
+            checkbox.closest('[data-vocabulary-row]')?.classList.toggle('is-selected', checkbox.checked);
+        };
+
         document.querySelector('[data-select-visible]')?.addEventListener('change', (event) => {
-            document.querySelectorAll('input[name="ids[]"]').forEach((checkbox) => {
+            document.querySelectorAll('[data-vocabulary-checkbox]').forEach((checkbox) => {
                 checkbox.checked = event.target.checked;
+                syncRowSelection(checkbox);
+            });
+        });
+
+        document.querySelectorAll('[data-vocabulary-checkbox]').forEach((checkbox) => {
+            checkbox.addEventListener('change', () => syncRowSelection(checkbox));
+        });
+
+        document.querySelectorAll('[data-vocabulary-row]').forEach((row) => {
+            row.addEventListener('click', (event) => {
+                if (event.target.closest('button, a, input, select, textarea, label')) {
+                    return;
+                }
+
+                const checkbox = row.querySelector('[data-vocabulary-checkbox]');
+                checkbox.checked = !checkbox.checked;
+                syncRowSelection(checkbox);
             });
         });
     </script>
