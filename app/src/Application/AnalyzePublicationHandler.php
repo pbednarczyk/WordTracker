@@ -19,7 +19,7 @@ final readonly class AnalyzePublicationHandler
     public function __construct(
         private TextAnalyzerInterface $textAnalyzer,
         private EntityManagerInterface $entityManager,
-    private VocabularyItemRepository $vocabularyItemRepository,
+        private VocabularyItemRepository $vocabularyItemRepository,
     ) {
     }
 

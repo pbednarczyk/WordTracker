@@ -145,6 +145,12 @@
                 background: var(--accent-strong);
             }
 
+            .button--small {
+                min-height: 32px;
+                padding: 6px 10px;
+                font-size: 14px;
+            }
+
             .panel {
                 background: var(--surface);
                 border: 1px solid var(--border);
@@ -157,6 +163,7 @@
                 display: grid;
                 grid-template-columns: repeat(3, minmax(0, 1fr));
                 gap: 16px;
+                margin-bottom: 24px;
             }
 
             .metric {
@@ -305,6 +312,61 @@
                 background: var(--surface);
                 border: 1px dashed var(--border);
                 border-radius: 8px;
+            }
+
+            .toolbar,
+            .bulk-actions {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+                flex-wrap: wrap;
+                margin-bottom: 14px;
+            }
+
+            .filters,
+            .search,
+            .bulk-actions {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                flex-wrap: wrap;
+            }
+
+            .filter {
+                display: inline-flex;
+                align-items: center;
+                min-height: 36px;
+                padding: 7px 12px;
+                border: 1px solid var(--border);
+                border-radius: 7px;
+                background: var(--surface);
+                color: var(--text);
+                font-weight: 650;
+            }
+
+            .filter--active {
+                border-color: var(--accent);
+                color: var(--accent);
+            }
+
+            .search input {
+                width: min(260px, 100%);
+            }
+
+            .select-all {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+            }
+
+            .checkbox-column {
+                width: 1%;
+                white-space: nowrap;
+            }
+
+            input[type="checkbox"] {
+                width: auto;
             }
 
             @media (max-width: 760px) {

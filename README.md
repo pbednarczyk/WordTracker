@@ -38,9 +38,30 @@ http://localhost:8080
 4. Click `Create`.
 5. On the publication details page, click `Analyze publication`.
 6. Review the vocabulary table with lemma, POS, occurrences, and status.
+7. Mark individual vocabulary items as `KNOWN` or `UNKNOWN`, or select multiple
+   visible rows and use the bulk actions.
+8. Use the `All`, `Unknown`, and `Known` filters plus the lemma search box to
+   narrow the vocabulary table.
 
 Re-analyzing a publication uses the same details page action and replaces that
-publication's previous analysis rows without duplicating vocabulary entries.
+publication's previous analysis rows without duplicating vocabulary entries or
+resetting global vocabulary statuses.
+
+`VocabularyItem.status` is global. When a word is marked `KNOWN` in one
+publication, every other publication using the same `language + lemma +
+partOfSpeech` vocabulary item shows it as `KNOWN` immediately.
+
+Publication details show two coverage metrics:
+
+- Vocabulary Coverage: percent of unique publication vocabulary items marked
+  `KNOWN`.
+- Text Coverage: percent of actual vocabulary occurrences belonging to `KNOWN`
+  vocabulary.
+
+These metrics intentionally measure different things. A frequent word can move
+Text Coverage much more than Vocabulary Coverage because Text Coverage is
+weighted by occurrence counts. Coverage is shown as `N/A` when a publication has
+no vocabulary rows.
 
 ## URLs
 
@@ -237,7 +258,7 @@ The requests include assertions for the current response contract.
 
 ## Data Model
 
-Current scope includes the MVP 1 persistence model, backend NLP publication analysis, and the first Twig UI for creating and analyzing publications. There is no upload flow, coverage calculation, or SRS yet.
+Current scope includes the MVP 1 persistence model, backend NLP publication analysis, global vocabulary status management, coverage calculation, and the Twig UI for creating, analyzing, filtering, and updating publication vocabulary. There is no upload flow or SRS yet.
 
 ```text
 Publication
@@ -251,6 +272,11 @@ Publication
 - `VocabularyItem` stores the global vocabulary item. It is the source of truth and is not deleted when a publication is deleted.
 - `VocabularyOccurrence` stores one concrete occurrence of a word in one publication.
 - `PublicationVocabulary` stores the aggregate relation between one publication and one vocabulary item, including the occurrence count.
+
+`PublicationVocabulary` does not store status. Status is read from
+`VocabularyItem`, so status changes are cross-publication by design. Coverage is
+computed from current `VocabularyItem.status` and `PublicationVocabulary`
+occurrence counts; it is not cached on `Publication`.
 
 `VocabularyItem` identity is unique by:
 

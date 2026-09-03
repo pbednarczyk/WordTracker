@@ -27,6 +27,22 @@
                 <span class="metric__value">{{ summary.uniqueVocabulary }}</span>
             </div>
             <div class="metric">
+                <span class="metric__label">Known</span>
+                <span class="metric__value">{{ summary.knownVocabulary }}</span>
+            </div>
+            <div class="metric">
+                <span class="metric__label">Unknown</span>
+                <span class="metric__value">{{ summary.unknownVocabulary }}</span>
+            </div>
+            <div class="metric">
+                <span class="metric__label">Vocabulary coverage</span>
+                <span class="metric__value">{{ summary.vocabularyCoverage }}</span>
+            </div>
+            <div class="metric">
+                <span class="metric__label">Text coverage</span>
+                <span class="metric__value">{{ summary.textCoverage }}</span>
+            </div>
+            <div class="metric">
                 <span class="metric__label">Vocabulary occurrences</span>
                 <span class="metric__value">{{ summary.vocabularyOccurrences }}</span>
             </div>
@@ -52,22 +68,64 @@
     {% if publication.analyzedAt %}
         <section>
             <h2>Vocabulary</h2>
+            <div class="toolbar">
+                <nav class="filters" aria-label="Vocabulary status filter">
+                    {% for label, value in { 'All': 'ALL', 'Unknown': 'UNKNOWN', 'Known': 'KNOWN' } %}
+                        <a class="filter {{ filters.status == value ? 'filter--active' : '' }}"
+                           href="{{ path('publication_show', { id: publication.id, status: value == 'ALL' ? null : value, q: filters.q ?: null }) }}">
+                            {{ label }}
+                        </a>
+                    {% endfor %}
+                </nav>
+                <form class="search" method="get" action="{{ path('publication_show', { id: publication.id }) }}">
+                    {% if filters.status != 'ALL' %}
+                        <input type="hidden" name="status" value="{{ filters.status }}">
+                    {% endif %}
+                    <input type="search" name="q" value="{{ filters.q }}" placeholder="Search lemma">
+                    <button class="button" type="submit">Search</button>
+                    {% if filters.q %}
+                        <a class="button" href="{{ path('publication_show', { id: publication.id, status: filters.status != 'ALL' ? filters.status : null }) }}">Clear</a>
+                    {% endif %}
+                </form>
+            </div>
+
             {% if vocabulary is empty %}
-                <div class="empty">No vocabulary rows were produced for this publication.</div>
+                <div class="empty">No vocabulary rows match this view.</div>
             {% else %}
+                <form id="bulk-status-form" method="post" action="{{ path('vocabulary_bulk_status_update') }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token('vocabulary_bulk_status_' ~ publication.id) }}">
+                    <input type="hidden" name="publicationId" value="{{ publication.id }}">
+                    <input type="hidden" name="currentStatus" value="{{ filters.status }}">
+                    <input type="hidden" name="currentQuery" value="{{ filters.q }}">
+                </form>
+
+                <div class="bulk-actions">
+                    <label class="select-all">
+                        <input type="checkbox" data-select-visible>
+                        Select all visible
+                    </label>
+                    <button class="button" type="submit" name="status" value="KNOWN" form="bulk-status-form">Mark selected as KNOWN</button>
+                    <button class="button" type="submit" name="status" value="UNKNOWN" form="bulk-status-form">Mark selected as UNKNOWN</button>
+                </div>
+
                 <table>
                     <thead>
                         <tr>
+                            <th class="checkbox-column">Select</th>
                             <th>Word</th>
                             <th>POS</th>
                             <th>Occurrences</th>
                             <th>Status</th>
+                            <th>Action</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for row in vocabulary %}
                             {% set item = row.vocabularyItem %}
                             <tr>
+                                <td class="checkbox-column">
+                                    <input type="checkbox" name="ids[]" value="{{ item.id }}" form="bulk-status-form">
+                                </td>
                                 <td>{{ item.lemma }}</td>
                                 <td>{{ item.partOfSpeech }}</td>
                                 <td>{{ row.occurrences }}</td>
@@ -76,6 +134,19 @@
                                         {{ item.status.value }}
                                     </span>
                                 </td>
+                                <td>
+                                    <form method="post" action="{{ path('vocabulary_status_update', { id: item.id }) }}">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('vocabulary_status_' ~ item.id) }}">
+                                        <input type="hidden" name="publicationId" value="{{ publication.id }}">
+                                        <input type="hidden" name="currentStatus" value="{{ filters.status }}">
+                                        <input type="hidden" name="currentQuery" value="{{ filters.q }}">
+                                        {% if item.status.value == 'KNOWN' %}
+                                            <button class="button button--small" type="submit" name="status" value="UNKNOWN">Mark UNKNOWN</button>
+                                        {% else %}
+                                            <button class="button button--small" type="submit" name="status" value="KNOWN">Mark KNOWN</button>
+                                        {% endif %}
+                                    </form>
+                                </td>
                             </tr>
                         {% endfor %}
                     </tbody>
@@ -83,4 +154,12 @@
             {% endif %}
         </section>
     {% endif %}
+
+    <script>
+        document.querySelector('[data-select-visible]')?.addEventListener('change', (event) => {
+            document.querySelectorAll('input[name="ids[]"]').forEach((checkbox) => {
+                checkbox.checked = event.target.checked;
+            });
+        });
+    </script>
 {% endblock %}

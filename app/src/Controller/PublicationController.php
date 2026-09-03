@@ -6,7 +6,10 @@ namespace App\Controller;
 
 use App\Application\AnalyzePublicationHandler;
 use App\Application\PublicationAnalysisException;
+use App\Application\VocabularyStatusManager;
 use App\Entity\Publication;
+use App\Entity\VocabularyItem;
+use App\Enum\VocabularyStatus;
 use App\Form\Model\PublicationInput;
 use App\Form\PublicationFormType;
 use App\Nlp\TextAnalyzerException;
@@ -27,6 +30,7 @@ final class PublicationController extends AbstractController
         private readonly PublicationVocabularyRepository $publicationVocabularyRepository,
         private readonly EntityManagerInterface $entityManager,
         private readonly AnalyzePublicationHandler $analyzePublication,
+        private readonly VocabularyStatusManager $vocabularyStatusManager,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -85,20 +89,24 @@ final class PublicationController extends AbstractController
     }
 
     #[Route('/publications/{id}', name: 'publication_show', methods: ['GET'])]
-    public function show(Publication $publication): Response
+    public function show(Publication $publication, Request $request): Response
     {
-        $vocabulary = $this->publicationVocabularyRepository->findForPublicationOrdered($publication);
-        $occurrenceCount = array_sum(array_map(
-            static fn ($row): int => $row->getOccurrences(),
-            $vocabulary,
-        ));
+        $statusFilter = $this->parseOptionalStatus((string) $request->query->get('status', ''));
+        $searchQuery = trim((string) $request->query->get('q', ''));
+        $vocabulary = $this->publicationVocabularyRepository->findForPublicationFiltered(
+            publication: $publication,
+            status: $statusFilter,
+            query: $searchQuery,
+        );
+        $coverageStats = $this->publicationVocabularyRepository->getCoverageStats($publication);
 
         return $this->render('publication/show.html.twig', [
             'publication' => $publication,
             'vocabulary' => $vocabulary,
-            'summary' => [
-                'uniqueVocabulary' => count($vocabulary),
-                'vocabularyOccurrences' => $occurrenceCount,
+            'summary' => $this->buildSummary($coverageStats),
+            'filters' => [
+                'status' => $statusFilter?->value ?? 'ALL',
+                'q' => $searchQuery,
             ],
             'textPreview' => $this->preview($publication->getRawText()),
         ]);
@@ -133,9 +141,144 @@ final class PublicationController extends AbstractController
         ], Response::HTTP_SEE_OTHER);
     }
 
+    #[Route('/vocabulary/{id}/status', name: 'vocabulary_status_update', methods: ['POST'])]
+    public function updateVocabularyStatus(VocabularyItem $item, Request $request): RedirectResponse
+    {
+        if (!$this->isCsrfTokenValid($this->vocabularyStatusCsrfTokenId($item), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Invalid CSRF token.');
+        }
+
+        $status = VocabularyStatus::tryFrom((string) $request->request->get('status'));
+        if ($status === null) {
+            $this->addFlash('error', 'Invalid vocabulary status.');
+
+            return $this->redirectToPublicationFromRequest($request);
+        }
+
+        $this->vocabularyStatusManager->updateOne($item, $status);
+        $this->addFlash('success', sprintf('"%s" marked as %s.', $item->getLemma(), $status->value));
+
+        return $this->redirectToPublicationFromRequest($request);
+    }
+
+    #[Route('/vocabulary/bulk-status', name: 'vocabulary_bulk_status_update', methods: ['POST'])]
+    public function bulkUpdateVocabularyStatus(Request $request): RedirectResponse
+    {
+        $publicationId = (string) $request->request->get('publicationId', '');
+        if (!$this->isCsrfTokenValid($this->bulkVocabularyStatusCsrfTokenId($publicationId), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Invalid CSRF token.');
+        }
+
+        $status = VocabularyStatus::tryFrom((string) $request->request->get('status'));
+        if ($status === null) {
+            $this->addFlash('error', 'Invalid vocabulary status.');
+
+            return $this->redirectToPublicationFromRequest($request);
+        }
+
+        $ids = $request->request->all('ids');
+        if ($ids === []) {
+            $this->addFlash('error', 'No vocabulary items selected.');
+
+            return $this->redirectToPublicationFromRequest($request);
+        }
+
+        $ids = array_map(static fn (mixed $id): int => filter_var($id, FILTER_VALIDATE_INT) ?: 0, $ids);
+        $ids = array_values(array_filter($ids, static fn (int $id): bool => $id > 0));
+        if ($ids === []) {
+            $this->addFlash('error', 'Invalid vocabulary selection.');
+
+            return $this->redirectToPublicationFromRequest($request);
+        }
+
+        try {
+            $updated = $this->vocabularyStatusManager->updateManyByIds($ids, $status);
+            $this->addFlash('success', sprintf('%d vocabulary items marked as %s.', $updated, $status->value));
+        } catch (\InvalidArgumentException) {
+            $this->addFlash('error', 'Invalid vocabulary selection.');
+        }
+
+        return $this->redirectToPublicationFromRequest($request);
+    }
+
     private function analyzeCsrfTokenId(Publication $publication): string
     {
         return 'analyze_publication_'.$publication->getId();
+    }
+
+    private function vocabularyStatusCsrfTokenId(VocabularyItem $item): string
+    {
+        return 'vocabulary_status_'.$item->getId();
+    }
+
+    private function bulkVocabularyStatusCsrfTokenId(string $publicationId): string
+    {
+        return 'vocabulary_bulk_status_'.$publicationId;
+    }
+
+    private function parseOptionalStatus(string $status): ?VocabularyStatus
+    {
+        if ($status === '' || strtoupper($status) === 'ALL') {
+            return null;
+        }
+
+        return VocabularyStatus::tryFrom(strtoupper($status));
+    }
+
+    /**
+     * @param array{
+     *     uniqueTotal: int,
+     *     uniqueKnown: int,
+     *     uniqueUnknown: int,
+     *     occurrencesTotal: int,
+     *     occurrencesKnown: int,
+     *     occurrencesUnknown: int
+     * } $stats
+     *
+     * @return array<string, int|string>
+     */
+    private function buildSummary(array $stats): array
+    {
+        return [
+            'uniqueVocabulary' => $stats['uniqueTotal'],
+            'knownVocabulary' => $stats['uniqueKnown'],
+            'unknownVocabulary' => $stats['uniqueUnknown'],
+            'vocabularyOccurrences' => $stats['occurrencesTotal'],
+            'knownOccurrences' => $stats['occurrencesKnown'],
+            'unknownOccurrences' => $stats['occurrencesUnknown'],
+            'vocabularyCoverage' => $this->formatPercentage($stats['uniqueKnown'], $stats['uniqueTotal']),
+            'textCoverage' => $this->formatPercentage($stats['occurrencesKnown'], $stats['occurrencesTotal']),
+        ];
+    }
+
+    private function formatPercentage(int $part, int $total): string
+    {
+        if ($total === 0) {
+            return 'N/A';
+        }
+
+        return number_format(($part / $total) * 100, 1).'%';
+    }
+
+    private function redirectToPublicationFromRequest(Request $request): RedirectResponse
+    {
+        $publicationId = filter_var($request->request->get('publicationId'), FILTER_VALIDATE_INT);
+        if ($publicationId === false || $publicationId === null) {
+            return $this->redirectToRoute('publication_index', [], Response::HTTP_SEE_OTHER);
+        }
+
+        $parameters = ['id' => $publicationId];
+        $status = (string) $request->request->get('currentStatus', '');
+        if ($status !== '' && strtoupper($status) !== 'ALL') {
+            $parameters['status'] = strtoupper($status);
+        }
+
+        $query = trim((string) $request->request->get('currentQuery', ''));
+        if ($query !== '') {
+            $parameters['q'] = $query;
+        }
+
+        return $this->redirectToRoute('publication_show', $parameters, Response::HTTP_SEE_OTHER);
     }
 
     private function blankToNull(?string $value): ?string

@@ -107,6 +107,34 @@ final class AnalyzePublicationHandlerTest extends KernelTestCase
         self::assertSame(1, $this->findPublicationVocabulary($publication->getId(), 'corridor'));
     }
 
+    public function testReanalysisDoesNotResetStatusForVocabularyStillInPublication(): void
+    {
+        $publication = $this->persistPublication('Running again.');
+        $analyzer = new MutableAnalyzer([
+            $this->token('Running', 'run', 'VERB', 0),
+        ]);
+        $handler = $this->handler($analyzer);
+
+        $handler($publication);
+        $run = $this->vocabularyItemRepository->findOneByIdentity('en', 'run', 'VERB');
+        self::assertNotNull($run);
+        $run->markKnown();
+        $this->entityManager->flush();
+
+        $analyzer->tokens = [
+            $this->token('Running', 'run', 'VERB', 0),
+            $this->token('again', 'again', 'ADV', 8),
+        ];
+
+        $handler($publication);
+        $this->entityManager->clear();
+
+        $knownRun = $this->vocabularyItemRepository->findOneByIdentity('en', 'run', 'VERB');
+        self::assertSame(VocabularyStatus::KNOWN, $knownRun?->getStatus());
+        self::assertSame(1, $this->findPublicationVocabulary($publication->getId(), 'run'));
+        self::assertSame(1, $this->findPublicationVocabulary($publication->getId(), 'again'));
+    }
+
     public function testNlpFailureDoesNotPersistAnalysis(): void
     {
         $publication = $this->persistPublication('Nothing should be stored.');

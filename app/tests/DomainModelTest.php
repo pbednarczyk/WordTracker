@@ -10,6 +10,7 @@ use App\Entity\VocabularyItem;
 use App\Entity\VocabularyOccurrence;
 use App\Enum\PublicationType;
 use App\Enum\VocabularyStatus;
+use App\Repository\PublicationVocabularyRepository;
 use App\Repository\VocabularyItemRepository;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -145,6 +146,73 @@ final class DomainModelTest extends KernelTestCase
         $this->expectException(UniqueConstraintViolationException::class);
 
         $this->entityManager->flush();
+    }
+
+    public function testPublicationVocabularyCoverageStatsUseGlobalVocabularyStatus(): void
+    {
+        $publication = new Publication('Coverage', PublicationType::ARTICLE);
+        $the = $this->vocabularyItem('the', 'DET', VocabularyStatus::KNOWN);
+        $run = $this->vocabularyItem('run', 'VERB', VocabularyStatus::KNOWN);
+        $reluctant = $this->vocabularyItem('reluctant', 'ADJ', VocabularyStatus::UNKNOWN);
+        $hero = $this->vocabularyItem('hero', 'NOUN', VocabularyStatus::UNKNOWN);
+
+        $this->entityManager->persist($publication);
+        $this->entityManager->persist(new PublicationVocabulary($publication, $the, 10));
+        $this->entityManager->persist(new PublicationVocabulary($publication, $run, 5));
+        $this->entityManager->persist(new PublicationVocabulary($publication, $reluctant, 2));
+        $this->entityManager->persist(new PublicationVocabulary($publication, $hero, 3));
+        $this->entityManager->flush();
+
+        $repository = self::getContainer()->get(PublicationVocabularyRepository::class);
+        self::assertInstanceOf(PublicationVocabularyRepository::class, $repository);
+
+        self::assertSame([
+            'uniqueTotal' => 4,
+            'uniqueKnown' => 2,
+            'uniqueUnknown' => 2,
+            'occurrencesTotal' => 20,
+            'occurrencesKnown' => 15,
+            'occurrencesUnknown' => 5,
+        ], $repository->getCoverageStats($publication));
+    }
+
+    public function testVocabularyStatusIsGlobalAcrossPublications(): void
+    {
+        $publicationA = new Publication('Publication A', PublicationType::ARTICLE);
+        $publicationB = new Publication('Publication B', PublicationType::ARTICLE);
+        $run = new VocabularyItem('en', 'run', 'VERB');
+
+        $this->entityManager->persist($publicationA);
+        $this->entityManager->persist($publicationB);
+        $this->entityManager->persist($run);
+        $this->entityManager->persist(new PublicationVocabulary($publicationA, $run, 2));
+        $this->entityManager->persist(new PublicationVocabulary($publicationB, $run, 5));
+        $this->entityManager->flush();
+
+        $run->markKnown();
+        $this->entityManager->flush();
+
+        $repository = self::getContainer()->get(PublicationVocabularyRepository::class);
+        self::assertInstanceOf(PublicationVocabularyRepository::class, $repository);
+
+        self::assertSame(VocabularyStatus::KNOWN, $repository->findForPublicationOrdered($publicationA)[0]->getVocabularyItem()->getStatus());
+        self::assertSame(VocabularyStatus::KNOWN, $repository->findForPublicationOrdered($publicationB)[0]->getVocabularyItem()->getStatus());
+        self::assertSame(1, $repository->getCoverageStats($publicationA)['uniqueKnown']);
+        self::assertSame(1, $repository->getCoverageStats($publicationB)['uniqueKnown']);
+        self::assertSame(2, $repository->getCoverageStats($publicationA)['occurrencesKnown']);
+        self::assertSame(5, $repository->getCoverageStats($publicationB)['occurrencesKnown']);
+    }
+
+    private function vocabularyItem(string $lemma, string $partOfSpeech, VocabularyStatus $status): VocabularyItem
+    {
+        $item = new VocabularyItem('en', $lemma, $partOfSpeech);
+        if ($status === VocabularyStatus::KNOWN) {
+            $item->markKnown();
+        }
+
+        $this->entityManager->persist($item);
+
+        return $item;
     }
 
     private function resetDatabase(): void
