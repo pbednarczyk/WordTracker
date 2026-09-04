@@ -62,6 +62,7 @@
         <section class="panel">
             <h2>Text preview</h2>
             <p class="preview">{{ textPreview }}</p>
+            <a class="button" href="{{ path('publication_text', { id: publication.id }) }}">Read full text</a>
         </section>
     {% endif %}
 
@@ -87,6 +88,10 @@
                         <a class="button" href="{{ path('publication_show', { id: publication.id, status: filters.status != 'ALL' ? filters.status : null }) }}">Clear</a>
                     {% endif %}
                 </form>
+                <div class="actions">
+                    <a class="button" href="{{ path('publication_vocabulary_export_csv', { id: publication.id, status: filters.status != 'ALL' ? filters.status : null, q: filters.q ?: null }) }}">Export CSV</a>
+                    <a class="button" href="{{ path('publication_vocabulary_export_xlsx', { id: publication.id, status: filters.status != 'ALL' ? filters.status : null, q: filters.q ?: null }) }}">Export XLSX</a>
+                </div>
             </div>
 
             {% if vocabulary is empty %}
@@ -126,7 +131,7 @@
                                 <td class="checkbox-column">
                                     <input type="checkbox" name="ids[]" value="{{ item.id }}" form="bulk-status-form" data-vocabulary-checkbox>
                                 </td>
-                                <td>{{ item.lemma }}</td>
+                                <td><a href="{{ path('vocabulary_show', { id: item.id }) }}">{{ item.lemma }}</a></td>
                                 <td>{{ item.partOfSpeech }}</td>
                                 <td>{{ row.occurrences }}</td>
                                 <td>

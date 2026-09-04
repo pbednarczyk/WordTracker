@@ -1,0 +1,71 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ item.lemma }} - WordTracker{% endblock %}
+
+{% block body %}
+    <section class="page-header">
+        <div>
+            <h1>{{ item.lemma }}</h1>
+            <p class="muted">
+                POS: {{ item.partOfSpeech }}
+                &nbsp; Language: {{ item.language }}
+                &nbsp; Status:
+                <span class="badge {{ item.status.value == 'KNOWN' ? 'badge--known' : 'badge--unknown' }}">
+                    {{ item.status.value }}
+                </span>
+            </p>
+        </div>
+        <form method="post" action="{{ path('vocabulary_status_update', { id: item.id }) }}">
+            <input type="hidden" name="_token" value="{{ csrf_token('vocabulary_status_' ~ item.id) }}">
+            <input type="hidden" name="redirectTo" value="vocabulary">
+            {% if item.status.value == 'KNOWN' %}
+                <button class="button" type="submit" name="status" value="UNKNOWN">Mark UNKNOWN</button>
+            {% else %}
+                <button class="button" type="submit" name="status" value="KNOWN">Mark KNOWN</button>
+            {% endif %}
+        </form>
+    </section>
+
+    <section class="grid">
+        <div class="metric">
+            <span class="metric__label">Total occurrences</span>
+            <span class="metric__value">{{ summary.totalOccurrences }}</span>
+        </div>
+        <div class="metric">
+            <span class="metric__label">Publications</span>
+            <span class="metric__value">{{ summary.publicationCount }}</span>
+        </div>
+    </section>
+
+    <section>
+        <h2>Occurrence history</h2>
+        {% if occurrences is empty %}
+            <div class="empty">No occurrence history available.</div>
+        {% else %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Publication</th>
+                        <th>Original form</th>
+                        <th>Sentence</th>
+                        <th>Position</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for occurrence in occurrences %}
+                        <tr>
+                            <td>
+                                <a href="{{ path('publication_show', { id: occurrence.publication.id }) }}">
+                                    {{ occurrence.publication.title }}
+                                </a>
+                            </td>
+                            <td>{{ occurrence.originalForm }}</td>
+                            <td>{{ occurrence.sentence ?: '-' }}</td>
+                            <td>{{ occurrence.position is not null ? occurrence.position : '-' }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% endif %}
+    </section>
+{% endblock %}

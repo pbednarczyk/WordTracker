@@ -6,6 +6,7 @@ namespace App\Controller;
 
 use App\Application\AnalyzePublicationHandler;
 use App\Application\PublicationAnalysisException;
+use App\Application\PublicationVocabularyExporter;
 use App\Application\VocabularyStatusManager;
 use App\Entity\Publication;
 use App\Entity\VocabularyItem;
@@ -15,9 +16,11 @@ use App\Form\PublicationFormType;
 use App\Nlp\TextAnalyzerException;
 use App\Repository\PublicationRepository;
 use App\Repository\PublicationVocabularyRepository;
+use App\Repository\VocabularyOccurrenceRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\HeaderUtils;
 use Symfony\Component\HttpFoundation\RedirectResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -28,9 +31,11 @@ final class PublicationController extends AbstractController
     public function __construct(
         private readonly PublicationRepository $publicationRepository,
         private readonly PublicationVocabularyRepository $publicationVocabularyRepository,
+        private readonly VocabularyOccurrenceRepository $vocabularyOccurrenceRepository,
         private readonly EntityManagerInterface $entityManager,
         private readonly AnalyzePublicationHandler $analyzePublication,
         private readonly VocabularyStatusManager $vocabularyStatusManager,
+        private readonly PublicationVocabularyExporter $publicationVocabularyExporter,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -112,6 +117,15 @@ final class PublicationController extends AbstractController
         ]);
     }
 
+    #[Route('/publications/{id}/text', name: 'publication_text', methods: ['GET'])]
+    public function text(Publication $publication): Response
+    {
+        return $this->render('publication/text.html.twig', [
+            'publication' => $publication,
+            'text' => trim((string) $publication->getRawText()),
+        ]);
+    }
+
     #[Route('/publications/{id}/analyze', name: 'publication_analyze', methods: ['POST'])]
     public function analyze(Publication $publication, Request $request): RedirectResponse
     {
@@ -141,6 +155,46 @@ final class PublicationController extends AbstractController
         ], Response::HTTP_SEE_OTHER);
     }
 
+    #[Route('/publications/{id}/vocabulary/export.csv', name: 'publication_vocabulary_export_csv', methods: ['GET'])]
+    public function exportVocabularyCsv(Publication $publication, Request $request): Response
+    {
+        $statusFilter = $this->parseOptionalStatus((string) $request->query->get('status', ''));
+        $searchQuery = trim((string) $request->query->get('q', ''));
+
+        return new Response($this->publicationVocabularyExporter->csv($publication, $statusFilter, $searchQuery), Response::HTTP_OK, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
+            'Content-Disposition' => HeaderUtils::makeDisposition(
+                HeaderUtils::DISPOSITION_ATTACHMENT,
+                $this->publicationVocabularyExporter->filename($publication, 'csv'),
+            ),
+        ]);
+    }
+
+    #[Route('/publications/{id}/vocabulary/export.xlsx', name: 'publication_vocabulary_export_xlsx', methods: ['GET'])]
+    public function exportVocabularyXlsx(Publication $publication, Request $request): Response
+    {
+        $statusFilter = $this->parseOptionalStatus((string) $request->query->get('status', ''));
+        $searchQuery = trim((string) $request->query->get('q', ''));
+
+        return new Response($this->publicationVocabularyExporter->xlsx($publication, $statusFilter, $searchQuery), Response::HTTP_OK, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => HeaderUtils::makeDisposition(
+                HeaderUtils::DISPOSITION_ATTACHMENT,
+                $this->publicationVocabularyExporter->filename($publication, 'xlsx'),
+            ),
+        ]);
+    }
+
+    #[Route('/vocabulary/{id}', name: 'vocabulary_show', methods: ['GET'])]
+    public function showVocabulary(VocabularyItem $item): Response
+    {
+        return $this->render('vocabulary/show.html.twig', [
+            'item' => $item,
+            'occurrences' => $this->vocabularyOccurrenceRepository->findForVocabularyItem($item),
+            'summary' => $this->vocabularyOccurrenceRepository->getSummaryForVocabularyItem($item),
+        ]);
+    }
+
     #[Route('/vocabulary/{id}/status', name: 'vocabulary_status_update', methods: ['POST'])]
     public function updateVocabularyStatus(VocabularyItem $item, Request $request): RedirectResponse
     {
@@ -152,13 +206,13 @@ final class PublicationController extends AbstractController
         if ($status === null) {
             $this->addFlash('error', 'Invalid vocabulary status.');
 
-            return $this->redirectToPublicationFromRequest($request);
+            return $this->redirectAfterVocabularyStatusUpdate($request, $item);
         }
 
         $this->vocabularyStatusManager->updateOne($item, $status);
         $this->addFlash('success', sprintf('"%s" marked as %s.', $item->getLemma(), $status->value));
 
-        return $this->redirectToPublicationFromRequest($request);
+        return $this->redirectAfterVocabularyStatusUpdate($request, $item);
     }
 
     #[Route('/vocabulary/bulk-status', name: 'vocabulary_bulk_status_update', methods: ['POST'])]
@@ -279,6 +333,17 @@ final class PublicationController extends AbstractController
         }
 
         return $this->redirectToRoute('publication_show', $parameters, Response::HTTP_SEE_OTHER);
+    }
+
+    private function redirectAfterVocabularyStatusUpdate(Request $request, VocabularyItem $item): RedirectResponse
+    {
+        if ((string) $request->request->get('redirectTo') === 'vocabulary') {
+            return $this->redirectToRoute('vocabulary_show', [
+                'id' => $item->getId(),
+            ], Response::HTTP_SEE_OTHER);
+        }
+
+        return $this->redirectToPublicationFromRequest($request);
     }
 
     private function blankToNull(?string $value): ?string

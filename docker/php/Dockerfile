@@ -4,10 +4,15 @@ WORKDIR /var/www/app
 
 RUN apk add --no-cache \
         git \
+        freetype-dev \
         icu-dev \
+        libjpeg-turbo-dev \
+        libpng-dev \
         libpq-dev \
+        libzip-dev \
         unzip \
-    && docker-php-ext-install intl opcache pdo_pgsql
+    && docker-php-ext-configure gd --with-freetype --with-jpeg \
+    && docker-php-ext-install gd intl opcache pdo_pgsql zip
 
 COPY --from=composer:2 /usr/bin/composer /usr/bin/composer
 COPY docker/php/entrypoint.sh /usr/local/bin/wordtracker-php-entrypoint

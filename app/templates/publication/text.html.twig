@@ -1,0 +1,21 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ publication.title }} text - WordTracker{% endblock %}
+
+{% block body %}
+    <section class="page-header">
+        <div>
+            <h1>{{ publication.title }}</h1>
+            <p class="muted">Full publication text</p>
+        </div>
+        <a class="button" href="{{ path('publication_show', { id: publication.id }) }}">Back to publication</a>
+    </section>
+
+    <section class="panel">
+        {% if text %}
+            <div class="full-text">{{ text }}</div>
+        {% else %}
+            <p class="muted">No publication text available.</p>
+        {% endif %}
+    </section>
+{% endblock %}

@@ -38,10 +38,17 @@ http://localhost:8080
 4. Click `Create`.
 5. On the publication details page, click `Analyze publication`.
 6. Review the vocabulary table with lemma, POS, occurrences, and status.
-7. Mark individual vocabulary items as `KNOWN` or `UNKNOWN`, or select multiple
+7. Use `Read full text` to open the full source text with original line breaks
+   preserved.
+8. Click a lemma in the vocabulary table to open its detail page with status,
+   language, POS, and occurrence history across publications. Publication
+   titles in the history link back to their publication details.
+9. Mark individual vocabulary items as `KNOWN` or `UNKNOWN`, or select multiple
    visible rows and use the bulk actions.
-8. Use the `All`, `Unknown`, and `Known` filters plus the lemma search box to
+10. Use the `All`, `Unknown`, and `Known` filters plus the lemma search box to
    narrow the vocabulary table.
+11. Use `Export CSV` or `Export XLSX` on a publication vocabulary table to
+   download the currently visible vocabulary data.
 
 Re-analyzing a publication uses the same details page action and replaces that
 publication's previous analysis rows without duplicating vocabulary entries or
@@ -62,6 +69,16 @@ These metrics intentionally measure different things. A frequent word can move
 Text Coverage much more than Vocabulary Coverage because Text Coverage is
 weighted by occurrence counts. Coverage is shown as `N/A` when a publication has
 no vocabulary rows.
+
+Publication vocabulary exports respect the active `status` and `q` filters.
+Both CSV and XLSX include:
+
+- `lemma`
+- `part_of_speech`
+- `status`
+- `occurrences`
+- `language`
+- `first_context_sentence`
 
 ## URLs
 

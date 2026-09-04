@@ -7,6 +7,7 @@ namespace App\Tests;
 use App\Entity\Publication;
 use App\Entity\PublicationVocabulary;
 use App\Entity\VocabularyItem;
+use App\Entity\VocabularyOccurrence;
 use App\Enum\PublicationType;
 use App\Enum\VocabularyStatus;
 use App\Nlp\AnalyzedToken;
@@ -14,6 +15,7 @@ use App\Nlp\TextAnalysis;
 use App\Nlp\TextAnalyzerInterface;
 use App\Tests\Double\ConfigurableTextAnalyzer;
 use Doctrine\ORM\EntityManagerInterface;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
@@ -98,6 +100,27 @@ final class PublicationUiTest extends WebTestCase
         self::assertResponseIsSuccessful();
         self::assertSelectorTextContains('h1', 'Details sample');
         self::assertSelectorTextContains('body', 'Not analyzed');
+    }
+
+    public function testFullPublicationTextPreservesLineBreaks(): void
+    {
+        $publication = $this->persistPublication('Line break text', "Line one.\n\nLine two.");
+
+        $this->client->request('GET', '/publications/'.$publication->getId().'/text');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('h1', 'Line break text');
+        self::assertStringContainsString("Line one.\n\nLine two.", (string) $this->client->getResponse()->getContent());
+    }
+
+    public function testFullPublicationTextDisplaysEmptyMessage(): void
+    {
+        $publication = $this->persistPublication('Missing raw text', null);
+
+        $this->client->request('GET', '/publications/'.$publication->getId().'/text');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('body', 'No publication text available.');
     }
 
     public function testAnalyzePublicationDisplaysVocabulary(): void
@@ -284,18 +307,132 @@ final class PublicationUiTest extends WebTestCase
         self::assertSelectorTextContains('body', '75.0%');
     }
 
+    public function testVocabularyDetailsDisplayOccurrenceHistory(): void
+    {
+        $firstPublication = $this->persistAnalyzedPublication('Reluctant Hero Ethics');
+        $secondPublication = $this->persistAnalyzedPublication('Hero Notes');
+        $item = $this->persistVocabularyRow($firstPublication, 'reluctant', 'ADJ', 2);
+        $this->entityManager->persist(new PublicationVocabulary($secondPublication, $item, 1));
+        $this->persistOccurrence($firstPublication, $item, 'Reluctant', 'The reluctant hero waited.', 4);
+        $this->persistOccurrence($firstPublication, $item, 'reluctant', 'A reluctant answer followed.', 2);
+        $this->persistOccurrence($secondPublication, $item, 'reluctant', 'Another reluctant choice appeared.', 8);
+        $this->entityManager->flush();
+
+        $this->client->request('GET', '/vocabulary/'.$item->getId());
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('h1', 'reluctant');
+        self::assertSelectorTextContains('body', 'Total occurrences');
+        self::assertSelectorTextContains('body', '3');
+        self::assertSelectorTextContains('body', 'Reluctant Hero Ethics');
+        self::assertSelectorTextContains('body', 'Hero Notes');
+        self::assertSelectorTextContains('body', 'The reluctant hero waited.');
+        self::assertSelectorTextContains('body', 'A reluctant answer followed.');
+        self::assertSelectorTextContains('body', 'Another reluctant choice appeared.');
+    }
+
+    public function testVocabularyDetailsStatusActionRedirectsBackToDetails(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Detail status');
+        $item = $this->persistVocabularyRow($publication, 'reluctant', 'ADJ', 1);
+        $crawler = $this->client->request('GET', '/vocabulary/'.$item->getId());
+
+        $this->client->submit($crawler->selectButton('Mark KNOWN')->form());
+
+        self::assertResponseRedirects('/vocabulary/'.$item->getId());
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', 'KNOWN');
+        self::assertSame('KNOWN', $this->vocabularyStatus($item));
+    }
+
+    public function testPublicationVocabularyCanBeExportedAsCsv(): void
+    {
+        $publication = $this->persistAnalyzedPublication('CSV Export');
+        $reluctant = $this->persistVocabularyRow($publication, 'reluctant', 'ADJ', 2);
+        $hero = $this->persistVocabularyRow($publication, 'hero', 'NOUN', 1, VocabularyStatus::KNOWN);
+        $this->persistOccurrence($publication, $reluctant, 'reluctant', 'The reluctant hero waited.', 4);
+        $this->persistOccurrence($publication, $hero, 'hero', 'The reluctant hero waited.', 18);
+        $this->entityManager->flush();
+
+        $this->client->request('GET', '/publications/'.$publication->getId().'/vocabulary/export.csv');
+
+        self::assertResponseIsSuccessful();
+        self::assertStringStartsWith('text/csv', (string) $this->client->getResponse()->headers->get('Content-Type'));
+        self::assertStringContainsString('.csv', (string) $this->client->getResponse()->headers->get('Content-Disposition'));
+
+        $csv = (string) $this->client->getResponse()->getContent();
+        self::assertStringContainsString("lemma,part_of_speech,status,occurrences,language,first_context_sentence\n", $csv);
+        self::assertStringContainsString('reluctant,ADJ,UNKNOWN,2,en,"The reluctant hero waited."', $csv);
+        self::assertStringContainsString('hero,NOUN,KNOWN,1,en,"The reluctant hero waited."', $csv);
+    }
+
+    public function testPublicationVocabularyCsvExportRespectsStatusFilter(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Filtered CSV Export');
+        $reluctant = $this->persistVocabularyRow($publication, 'reluctant', 'ADJ', 2);
+        $run = $this->persistVocabularyRow($publication, 'run', 'VERB', 1, VocabularyStatus::KNOWN);
+        $the = $this->persistVocabularyRow($publication, 'the', 'DET', 3, VocabularyStatus::KNOWN);
+        $this->persistOccurrence($publication, $reluctant, 'reluctant', 'The reluctant hero waited.', 4);
+        $this->persistOccurrence($publication, $run, 'running', 'The hero was running.', 13);
+        $this->persistOccurrence($publication, $the, 'The', 'The reluctant hero waited.', 0);
+        $this->entityManager->flush();
+
+        $this->client->request('GET', '/publications/'.$publication->getId().'/vocabulary/export.csv?status=UNKNOWN');
+
+        self::assertResponseIsSuccessful();
+        $csv = (string) $this->client->getResponse()->getContent();
+        self::assertStringContainsString('reluctant,ADJ,UNKNOWN,2,en', $csv);
+        self::assertStringNotContainsString('run,VERB,KNOWN', $csv);
+        self::assertStringNotContainsString('the,DET,KNOWN', $csv);
+    }
+
+    public function testPublicationVocabularyCanBeExportedAsXlsx(): void
+    {
+        $publication = $this->persistAnalyzedPublication('XLSX Export');
+        $reluctant = $this->persistVocabularyRow($publication, 'reluctant', 'ADJ', 2);
+        $hero = $this->persistVocabularyRow($publication, 'hero', 'NOUN', 1, VocabularyStatus::KNOWN);
+        $this->persistOccurrence($publication, $reluctant, 'reluctant', 'The reluctant hero waited.', 4);
+        $this->persistOccurrence($publication, $hero, 'hero', 'The reluctant hero waited.', 18);
+        $this->entityManager->flush();
+
+        $this->client->request('GET', '/publications/'.$publication->getId().'/vocabulary/export.xlsx');
+
+        self::assertResponseIsSuccessful();
+        self::assertSame('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', $this->client->getResponse()->headers->get('Content-Type'));
+        self::assertStringContainsString('.xlsx', (string) $this->client->getResponse()->headers->get('Content-Disposition'));
+
+        $path = tempnam(sys_get_temp_dir(), 'wordtracker-test-xlsx-');
+        self::assertIsString($path);
+        file_put_contents($path, (string) $this->client->getResponse()->getContent());
+
+        try {
+            $sheet = IOFactory::load($path)->getActiveSheet();
+            self::assertSame('lemma', $sheet->getCell('A1')->getValue());
+            self::assertSame('reluctant', $sheet->getCell('A2')->getValue());
+            self::assertSame('ADJ', $sheet->getCell('B2')->getValue());
+            self::assertSame('UNKNOWN', $sheet->getCell('C2')->getValue());
+            self::assertSame(2, $sheet->getCell('D2')->getValue());
+            self::assertSame('en', $sheet->getCell('E2')->getValue());
+            self::assertSame('The reluctant hero waited.', $sheet->getCell('F2')->getValue());
+            self::assertSame('hero', $sheet->getCell('A3')->getValue());
+            self::assertSame('KNOWN', $sheet->getCell('C3')->getValue());
+        } finally {
+            @unlink($path);
+        }
+    }
+
     private function clientWithAnalyzer(TextAnalyzerInterface $analyzer): void
     {
         ConfigurableTextAnalyzer::$analysis = $analyzer->analyze('test text');
     }
 
-    private function persistPublication(string $title): Publication
+    private function persistPublication(string $title, ?string $rawText = 'The children were running down the corridor.'): Publication
     {
         $publication = new Publication(
             title: $title,
             type: PublicationType::ARTICLE,
             language: 'en',
-            rawText: 'The children were running down the corridor.',
+            rawText: $rawText,
         );
 
         $this->entityManager->persist($publication);
@@ -330,6 +467,16 @@ final class PublicationUiTest extends WebTestCase
         $this->entityManager->flush();
 
         return $item;
+    }
+
+    private function persistOccurrence(
+        Publication $publication,
+        VocabularyItem $item,
+        string $originalForm,
+        string $sentence,
+        int $position,
+    ): void {
+        $this->entityManager->persist(new VocabularyOccurrence($publication, $item, $originalForm, $sentence, $position));
     }
 
     private function singleStatusToken(Publication $publication, VocabularyItem $item): string
