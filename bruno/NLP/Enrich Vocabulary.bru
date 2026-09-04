@@ -1,0 +1,39 @@
+meta {
+  name: Enrich Vocabulary
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{nlpBaseUrl}}/enrich
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+}
+
+body:json {
+  {
+    "lemma": "reluctant",
+    "part_of_speech": "ADJ",
+    "original_form": "reluctant",
+    "context_sentence": "He was reluctant to enter the cave.",
+    "source_language": "en",
+    "target_language": "pl",
+    "model": "wordtracker-local-enrichment"
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.translation_pl: isString
+  res.body.definition_en: isString
+  res.body.meaning_in_context: isString
+  res.body.simple_example: isString
+  res.body.cefr_level: eq B2
+  res.body.provider: eq wordtracker-nlp
+  res.body.model: eq wordtracker-local-enrichment
+  res.body.prompt_version: eq word-enrichment-v1
+}

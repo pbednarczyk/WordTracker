@@ -99,6 +99,7 @@
             {% else %}
                 <form id="bulk-status-form" method="post" action="{{ path('vocabulary_bulk_status_update') }}">
                     <input type="hidden" name="_token" value="{{ csrf_token('vocabulary_bulk_status_' ~ publication.id) }}">
+                    <input type="hidden" name="enrichmentToken" value="{{ csrf_token('vocabulary_bulk_enrichment_' ~ publication.id) }}">
                     <input type="hidden" name="publicationId" value="{{ publication.id }}">
                     <input type="hidden" name="currentStatus" value="{{ filters.status }}">
                     <input type="hidden" name="currentQuery" value="{{ filters.q }}">
@@ -111,6 +112,7 @@
                     </label>
                     <button class="button" type="submit" name="status" value="KNOWN" form="bulk-status-form">Mark selected as KNOWN</button>
                     <button class="button" type="submit" name="status" value="UNKNOWN" form="bulk-status-form">Mark selected as UNKNOWN</button>
+                    <button class="button" type="submit" form="bulk-status-form" formaction="{{ path('vocabulary_bulk_enrich') }}">Enrich selected</button>
                 </div>
 
                 <table>
@@ -138,6 +140,9 @@
                                     <span class="badge {{ item.status.value == 'KNOWN' ? 'badge--known' : 'badge--unknown' }}">
                                         {{ item.status.value }}
                                     </span>
+                                    {% if row.enrichment %}
+                                        <span class="badge badge--enriched">ENRICHED</span>
+                                    {% endif %}
                                 </td>
                                 <td>
                                     <form method="post" action="{{ path('vocabulary_status_update', { id: item.id }) }}">

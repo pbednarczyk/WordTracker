@@ -35,3 +35,32 @@ class AnalyzeResponse(BaseModel):
     word_count: int
     unique_lemma_count: int
     tokens: list[AnalyzedToken]
+
+
+class EnrichRequest(BaseModel):
+    lemma: str
+    part_of_speech: str
+    original_form: str
+    context_sentence: str
+    source_language: str = "en"
+    target_language: str = "pl"
+    model: str | None = None
+
+    @field_validator("lemma", "part_of_speech", "original_form", "context_sentence", "source_language", "target_language")
+    @classmethod
+    def fields_must_not_be_blank(cls, value: str) -> str:
+        if value.strip() == "":
+            raise ValueError("Field must not be empty.")
+
+        return value
+
+
+class EnrichResponse(BaseModel):
+    translation_pl: str
+    definition_en: str
+    meaning_in_context: str
+    simple_example: str
+    cefr_level: str | None
+    provider: str | None
+    model: str | None
+    prompt_version: str | None

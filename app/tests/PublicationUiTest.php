@@ -6,14 +6,18 @@ namespace App\Tests;
 
 use App\Entity\Publication;
 use App\Entity\PublicationVocabulary;
+use App\Entity\PublicationVocabularyEnrichment;
 use App\Entity\VocabularyItem;
 use App\Entity\VocabularyOccurrence;
 use App\Enum\PublicationType;
 use App\Enum\VocabularyStatus;
+use App\Enrichment\VocabularyEnrichmentException;
+use App\Enrichment\VocabularyEnrichmentResult;
 use App\Nlp\AnalyzedToken;
 use App\Nlp\TextAnalysis;
 use App\Nlp\TextAnalyzerInterface;
 use App\Tests\Double\ConfigurableTextAnalyzer;
+use App\Tests\Double\ConfigurableVocabularyEnrichmentProvider;
 use Doctrine\ORM\EntityManagerInterface;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -35,6 +39,7 @@ final class PublicationUiTest extends WebTestCase
         $this->entityManager = $entityManager;
         $this->resetDatabase();
         ConfigurableTextAnalyzer::$analysis = null;
+        ConfigurableVocabularyEnrichmentProvider::reset();
     }
 
     public function testPublicationListLoads(): void
@@ -394,6 +399,74 @@ final class PublicationUiTest extends WebTestCase
         self::assertSame('KNOWN', $this->vocabularyStatus($item));
     }
 
+    public function testVocabularyDetailsCanGenerateEnrichment(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Reluctant Context');
+        $item = $this->persistVocabularyRow($publication, 'reluctant', 'ADJ', 1);
+        $this->persistOccurrence($publication, $item, 'reluctant', 'He was reluctant to enter the cave.', 7);
+        $this->entityManager->flush();
+        ConfigurableVocabularyEnrichmentProvider::$result = $this->enrichmentResult('niechetny', 'hesitant to enter the cave');
+
+        $crawler = $this->client->request('GET', '/vocabulary/'.$item->getId());
+        $this->client->submit($crawler->selectButton('Generate enrichment')->form());
+
+        self::assertResponseRedirects('/vocabulary/'.$item->getId());
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', 'AI Enrichment');
+        self::assertSelectorTextContains('body', 'niechetny');
+        self::assertSelectorTextContains('body', 'not willing or eager to do something');
+        self::assertSelectorTextContains('body', 'hesitant to enter the cave');
+        self::assertSelectorTextContains('body', 'She was reluctant to speak.');
+        self::assertSelectorTextContains('body', 'B2');
+        self::assertSelectorTextContains('body', 'He was reluctant to enter the cave.');
+        self::assertSame('reluctant', ConfigurableVocabularyEnrichmentProvider::$requests[0]->lemma);
+    }
+
+    public function testVocabularyDetailsProviderFailureShowsErrorAndKeepsExistingEnrichment(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Failure Context');
+        $item = $this->persistVocabularyRow($publication, 'reluctant', 'ADJ', 1);
+        $this->persistOccurrence($publication, $item, 'reluctant', 'He was reluctant to enter the cave.', 7);
+        $this->persistEnrichment($publication, $item, 'existing translation');
+        $this->entityManager->flush();
+        ConfigurableVocabularyEnrichmentProvider::$exception = new VocabularyEnrichmentException('Provider unavailable.');
+
+        $crawler = $this->client->request('GET', '/vocabulary/'.$item->getId());
+        $this->client->submit($crawler->selectButton('Regenerate')->form());
+
+        self::assertResponseRedirects('/vocabulary/'.$item->getId());
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', 'Provider unavailable.');
+        self::assertSelectorTextContains('body', 'existing translation');
+        self::assertSame('existing translation', $this->entityManager->getConnection()->fetchOne('SELECT translation_pl FROM publication_vocabulary_enrichment'));
+    }
+
+    public function testBulkVocabularyEnrichmentCreatesSuccessfulRowsAndReportsFailures(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Bulk Enrichment');
+        $reluctant = $this->persistVocabularyRow($publication, 'reluctant', 'ADJ', 1);
+        $hero = $this->persistVocabularyRow($publication, 'hero', 'NOUN', 1);
+        $missingContext = $this->persistVocabularyRow($publication, 'missing', 'NOUN', 1);
+        $this->persistOccurrence($publication, $reluctant, 'reluctant', 'He was reluctant to enter the cave.', 7);
+        $this->persistOccurrence($publication, $hero, 'hero', 'The hero entered the cave.', 4);
+        $this->entityManager->flush();
+        ConfigurableVocabularyEnrichmentProvider::$result = $this->enrichmentResult('generated', 'generated meaning');
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId());
+        $token = (string) $crawler->filter('form#bulk-status-form input[name="enrichmentToken"]')->attr('value');
+        $this->client->request('POST', '/vocabulary/bulk-enrichment', [
+            'enrichmentToken' => $token,
+            'publicationId' => $publication->getId(),
+            'ids' => [$reluctant->getId(), $hero->getId(), $missingContext->getId()],
+        ]);
+
+        self::assertResponseRedirects('/publications/'.$publication->getId());
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', '2 enrichments generated.');
+        self::assertSelectorTextContains('body', 'Some enrichments failed');
+        self::assertSame(2, $this->countRows('publication_vocabulary_enrichment'));
+    }
+
     public function testPublicationVocabularyCanBeExportedAsCsv(): void
     {
         $publication = $this->persistAnalyzedPublication('CSV Export');
@@ -401,6 +474,7 @@ final class PublicationUiTest extends WebTestCase
         $hero = $this->persistVocabularyRow($publication, 'hero', 'NOUN', 1, VocabularyStatus::KNOWN);
         $this->persistOccurrence($publication, $reluctant, 'reluctant', 'The reluctant hero waited.', 4);
         $this->persistOccurrence($publication, $hero, 'hero', 'The reluctant hero waited.', 18);
+        $this->persistEnrichment($publication, $reluctant, 'niechetny');
         $this->entityManager->flush();
 
         $this->client->request('GET', '/publications/'.$publication->getId().'/vocabulary/export.csv');
@@ -410,9 +484,30 @@ final class PublicationUiTest extends WebTestCase
         self::assertStringContainsString('.csv', (string) $this->client->getResponse()->headers->get('Content-Disposition'));
 
         $csv = (string) $this->client->getResponse()->getContent();
-        self::assertStringContainsString("lemma,part_of_speech,status,occurrences,language,first_context_sentence\n", $csv);
-        self::assertStringContainsString('reluctant,ADJ,UNKNOWN,2,en,"The reluctant hero waited."', $csv);
-        self::assertStringContainsString('hero,NOUN,KNOWN,1,en,"The reluctant hero waited."', $csv);
+        $rows = array_map(static fn (string $line): array => str_getcsv($line, ',', '"', ''), array_filter(explode("\n", trim($csv))));
+        self::assertSame([
+            'lemma',
+            'part_of_speech',
+            'status',
+            'occurrences',
+            'language',
+            'translation_pl',
+            'definition_en',
+            'meaning_in_context',
+            'simple_example',
+            'cefr_level',
+            'first_context_sentence',
+        ], $rows[0]);
+        self::assertSame(['reluctant', 'ADJ', 'UNKNOWN', '2', 'en'], array_slice($rows[1], 0, 5));
+        self::assertSame('niechetny', $rows[1][5]);
+        self::assertSame('not willing or eager to do something', $rows[1][6]);
+        self::assertSame('existing contextual meaning', $rows[1][7]);
+        self::assertSame('She was reluctant to speak.', $rows[1][8]);
+        self::assertSame('B2', $rows[1][9]);
+        self::assertSame('The reluctant hero waited.', $rows[1][10]);
+        self::assertSame(['hero', 'NOUN', 'KNOWN', '1', 'en'], array_slice($rows[2], 0, 5));
+        self::assertSame('', $rows[2][5]);
+        self::assertSame('The reluctant hero waited.', $rows[2][10]);
     }
 
     public function testPublicationVocabularyCsvExportRespectsStatusFilter(): void
@@ -442,6 +537,7 @@ final class PublicationUiTest extends WebTestCase
         $hero = $this->persistVocabularyRow($publication, 'hero', 'NOUN', 1, VocabularyStatus::KNOWN);
         $this->persistOccurrence($publication, $reluctant, 'reluctant', 'The reluctant hero waited.', 4);
         $this->persistOccurrence($publication, $hero, 'hero', 'The reluctant hero waited.', 18);
+        $this->persistEnrichment($publication, $reluctant, 'niechetny');
         $this->entityManager->flush();
 
         $this->client->request('GET', '/publications/'.$publication->getId().'/vocabulary/export.xlsx');
@@ -456,15 +552,23 @@ final class PublicationUiTest extends WebTestCase
 
         try {
             $sheet = IOFactory::load($path)->getActiveSheet();
-            self::assertSame('lemma', $sheet->getCell('A1')->getValue());
+            self::assertSame('Lemma', $sheet->getCell('A1')->getValue());
+            self::assertSame('Polish Translation', $sheet->getCell('F1')->getValue());
+            self::assertSame('Context', $sheet->getCell('K1')->getValue());
             self::assertSame('reluctant', $sheet->getCell('A2')->getValue());
             self::assertSame('ADJ', $sheet->getCell('B2')->getValue());
             self::assertSame('UNKNOWN', $sheet->getCell('C2')->getValue());
             self::assertSame(2, $sheet->getCell('D2')->getValue());
             self::assertSame('en', $sheet->getCell('E2')->getValue());
-            self::assertSame('The reluctant hero waited.', $sheet->getCell('F2')->getValue());
+            self::assertSame('niechetny', $sheet->getCell('F2')->getValue());
+            self::assertSame('not willing or eager to do something', $sheet->getCell('G2')->getValue());
+            self::assertSame('existing contextual meaning', $sheet->getCell('H2')->getValue());
+            self::assertSame('She was reluctant to speak.', $sheet->getCell('I2')->getValue());
+            self::assertSame('B2', $sheet->getCell('J2')->getValue());
+            self::assertSame('The reluctant hero waited.', $sheet->getCell('K2')->getValue());
             self::assertSame('hero', $sheet->getCell('A3')->getValue());
             self::assertSame('KNOWN', $sheet->getCell('C3')->getValue());
+            self::assertNull($sheet->getCell('F3')->getValue());
         } finally {
             @unlink($path);
         }
@@ -526,6 +630,42 @@ final class PublicationUiTest extends WebTestCase
         int $position,
     ): void {
         $this->entityManager->persist(new VocabularyOccurrence($publication, $item, $originalForm, $sentence, $position));
+    }
+
+    private function persistEnrichment(Publication $publication, VocabularyItem $item, string $translation): void
+    {
+        $publicationVocabulary = $this->entityManager->getRepository(PublicationVocabulary::class)->findOneBy([
+            'publication' => $publication,
+            'vocabularyItem' => $item,
+        ]);
+        self::assertInstanceOf(PublicationVocabulary::class, $publicationVocabulary);
+
+        $this->entityManager->persist(new PublicationVocabularyEnrichment(
+            publicationVocabulary: $publicationVocabulary,
+            translationPl: $translation,
+            definitionEn: 'not willing or eager to do something',
+            meaningInContext: 'existing contextual meaning',
+            simpleExample: 'She was reluctant to speak.',
+            cefrLevel: 'B2',
+            sourceSentence: 'He was reluctant to enter the cave.',
+            provider: 'test',
+            model: 'fake',
+            promptVersion: 'word-enrichment-v1',
+        ));
+    }
+
+    private function enrichmentResult(string $translation, string $meaning): VocabularyEnrichmentResult
+    {
+        return new VocabularyEnrichmentResult(
+            translationPl: $translation,
+            definitionEn: 'not willing or eager to do something',
+            meaningInContext: $meaning,
+            simpleExample: 'She was reluctant to speak.',
+            cefrLevel: 'B2',
+            provider: 'test',
+            model: 'fake',
+            promptVersion: 'word-enrichment-v1',
+        );
     }
 
     private function singleStatusToken(Publication $publication, VocabularyItem $item): string

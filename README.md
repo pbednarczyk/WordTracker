@@ -49,10 +49,14 @@ http://localhost:8080
    narrow the vocabulary table.
 11. Use `Export CSV` or `Export XLSX` on a publication vocabulary table to
    download the currently visible vocabulary data.
+12. Open a lemma detail page and use `Generate enrichment` for a specific
+   publication context, or select visible words on a publication page and use
+   `Enrich selected`.
 
 Re-analyzing a publication uses the same details page action and replaces that
 publication's previous analysis rows without duplicating vocabulary entries or
-resetting global vocabulary statuses.
+resetting global vocabulary statuses. Context-specific AI enrichment is kept
+when the same vocabulary item still appears in the publication after re-analysis.
 
 `VocabularyItem.status` is global. When a word is marked `KNOWN` in one
 publication, every other publication using the same `language + lemma +
@@ -78,7 +82,48 @@ Both CSV and XLSX include:
 - `status`
 - `occurrences`
 - `language`
+- `translation_pl`
+- `definition_en`
+- `meaning_in_context`
+- `simple_example`
+- `cefr_level`
 - `first_context_sentence`
+
+## AI Vocabulary Enrichment
+
+AI enrichment is stored per `PublicationVocabulary`, not directly on the global
+`VocabularyItem`. The same lemma can therefore have different translations and
+contextual meanings in different publications.
+
+Generated fields:
+
+- Polish translation
+- English definition
+- meaning in this specific context
+- simple English example
+- optional CEFR level: `A1`, `A2`, `B1`, `B2`, `C1`, `C2`, or empty
+- source sentence used for generation
+- provider, model, and prompt version metadata
+
+`VocabularyItem.status` remains global. Generating enrichment does not mark a
+word as `KNOWN`, and enrichment does not affect Vocabulary Coverage or Text
+Coverage. Those metrics are still calculated only from vocabulary status.
+
+Configure the enrichment provider with:
+
+```text
+VOCABULARY_ENRICHMENT_BASE_URL=http://nlp:8000
+VOCABULARY_ENRICHMENT_MODEL=wordtracker-local-enrichment
+VOCABULARY_ENRICHMENT_TIMEOUT=15
+```
+
+The default local provider is exposed by the NLP service at `POST /enrich` and
+returns structured JSON. It is deterministic for local development and tests.
+Production can point the Symfony provider to another compatible service without
+changing the domain model.
+
+AI enrichment is an educational aid. Generated translations, definitions, CEFR
+levels, and examples may require manual review or correction.
 
 ## URLs
 
@@ -179,7 +224,7 @@ PostgreSQL
 
 `VocabularyItem` is global and unique by `language + lemma + partOfSpeech`. `VocabularyOccurrence` stores each vocabulary occurrence for one publication after named-entity filtering. `PublicationVocabulary` stores per-publication aggregate counts.
 
-Tokens whose `entity_type` is a named-entity category such as `PERSON`, `GPE`, `ORG`, `LOC`, or `NORP` are ignored by the vocabulary pipeline. `PROPN` by itself does not cause a token to be ignored. Re-analyzing a publication deletes only that publication's previous `VocabularyOccurrence` and `PublicationVocabulary` rows, then writes the new analysis in one database transaction. Existing `VocabularyItem` rows and their statuses are kept.
+Tokens whose `entity_type` is a named-entity category such as `PERSON`, `GPE`, `ORG`, `LOC`, or `NORP` are ignored by the vocabulary pipeline. `PROPN` by itself does not cause a token to be ignored. Re-analyzing a publication deletes only that publication's previous `VocabularyOccurrence` rows, reconciles `PublicationVocabulary` rows, and writes the new analysis in one database transaction. Existing `VocabularyItem` rows and their statuses are kept. Existing enrichment survives when the same vocabulary item still appears in the publication.
 
 Analyze an existing publication:
 
@@ -267,6 +312,45 @@ Only alphabetic word tokens are returned in `tokens`; punctuation, whitespace, s
 
 Input text must not be blank. Payloads over `1,000,000` UTF-8 bytes return `413 Payload Too Large`.
 
+### Enrich Vocabulary
+
+```http
+POST /enrich
+Content-Type: application/json
+```
+
+Request:
+
+```json
+{
+  "lemma": "reluctant",
+  "part_of_speech": "ADJ",
+  "original_form": "reluctant",
+  "context_sentence": "He was reluctant to enter the cave.",
+  "source_language": "en",
+  "target_language": "pl",
+  "model": "wordtracker-local-enrichment"
+}
+```
+
+Response shape:
+
+```json
+{
+  "translation_pl": "niechętny / wahający się",
+  "definition_en": "not willing or eager to do something",
+  "meaning_in_context": "reluctant means hesitant or unwilling in this sentence",
+  "simple_example": "She was reluctant to speak.",
+  "cefr_level": "B2",
+  "provider": "wordtracker-nlp",
+  "model": "wordtracker-local-enrichment",
+  "prompt_version": "word-enrichment-v1"
+}
+```
+
+The local MVP endpoint is deterministic and supports English to Polish. Symfony
+validates the structured response before saving it.
+
 Swagger UI is available at:
 
 ```text
@@ -301,6 +385,7 @@ Current requests:
 
 - `NLP / Health`: `GET {{nlpBaseUrl}}/health`
 - `NLP / Analyze`: `POST {{nlpBaseUrl}}/analyze`
+- `NLP / Enrich Vocabulary`: `POST {{nlpBaseUrl}}/enrich`
 
 The requests include assertions for the current response contract.
 
@@ -314,12 +399,17 @@ Publication
    |-- VocabularyOccurrence -- VocabularyItem
    |
    `-- PublicationVocabulary - VocabularyItem
+          |
+          `-- PublicationVocabularyEnrichment
 ```
 
 - `Publication` stores a source material such as a book, article, comic, document, web page, or other text-bearing item.
 - `VocabularyItem` stores the global vocabulary item. It is the source of truth and is not deleted when a publication is deleted.
 - `VocabularyOccurrence` stores one concrete occurrence of a word in one publication.
 - `PublicationVocabulary` stores the aggregate relation between one publication and one vocabulary item, including the occurrence count.
+- `PublicationVocabularyEnrichment` stores AI-generated translation, definition,
+  context meaning, simple example, optional CEFR level, source sentence, and
+  provider metadata for a word in one specific publication.
 
 `PublicationVocabulary` does not store status. Status is read from
 `VocabularyItem`, so status changes are cross-publication by design. Coverage is

@@ -7,6 +7,9 @@ services:
         bind:
             string $nlpHealthUrl: '%env(NLP_HEALTH_URL)%'
             string $nlpBaseUrl: '%env(NLP_BASE_URL)%'
+            string $vocabularyEnrichmentBaseUrl: '%env(VOCABULARY_ENRICHMENT_BASE_URL)%'
+            string $vocabularyEnrichmentModel: '%env(VOCABULARY_ENRICHMENT_MODEL)%'
+            float $vocabularyEnrichmentTimeout: '%env(float:VOCABULARY_ENRICHMENT_TIMEOUT)%'
             string $fixturesDir: '%kernel.project_dir%/../fixtures'
 
     App\:
@@ -14,3 +17,6 @@ services:
 
     App\Nlp\TextAnalyzerInterface:
         alias: App\Nlp\HttpTextAnalyzer
+
+    App\Enrichment\VocabularyEnrichmentProviderInterface:
+        alias: App\Enrichment\HttpVocabularyEnrichmentProvider

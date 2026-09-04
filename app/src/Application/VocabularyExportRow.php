@@ -12,6 +12,11 @@ final readonly class VocabularyExportRow
         public string $status,
         public int $occurrences,
         public string $language,
+        public string $translationPl,
+        public string $definitionEn,
+        public string $meaningInContext,
+        public string $simpleExample,
+        public string $cefrLevel,
         public string $firstContextSentence,
     ) {
     }

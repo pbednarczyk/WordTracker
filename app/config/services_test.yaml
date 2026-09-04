@@ -2,3 +2,7 @@ services:
     App\Nlp\TextAnalyzerInterface:
         class: App\Tests\Double\ConfigurableTextAnalyzer
         public: true
+
+    App\Enrichment\VocabularyEnrichmentProviderInterface:
+        class: App\Tests\Double\ConfigurableVocabularyEnrichmentProvider
+        public: true

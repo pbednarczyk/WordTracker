@@ -12,6 +12,7 @@ use App\Nlp\AnalyzedToken;
 use App\Nlp\TextAnalysis;
 use App\Nlp\TextAnalyzerInterface;
 use App\Repository\VocabularyItemRepository;
+use App\Repository\PublicationVocabularyRepository;
 use Doctrine\ORM\EntityManagerInterface;
 
 final readonly class AnalyzePublicationHandler
@@ -20,6 +21,7 @@ final readonly class AnalyzePublicationHandler
         private TextAnalyzerInterface $textAnalyzer,
         private EntityManagerInterface $entityManager,
         private VocabularyItemRepository $vocabularyItemRepository,
+        private PublicationVocabularyRepository $publicationVocabularyRepository,
     ) {
     }
 
@@ -52,7 +54,8 @@ final readonly class AnalyzePublicationHandler
     private function persistAnalysis(Publication $publication, TextAnalysis $analysis): AnalyzePublicationResult
     {
         return $this->entityManager->wrapInTransaction(function () use ($publication, $analysis): AnalyzePublicationResult {
-            $this->deleteExistingAnalysis($publication);
+            $existingPublicationVocabulary = $this->findExistingPublicationVocabulary($publication);
+            $this->deleteExistingOccurrences($publication);
 
             $itemsByIdentity = [];
             $aggregation = [];
@@ -82,12 +85,23 @@ final readonly class AnalyzePublicationHandler
                 ++$vocabularyOccurrences;
             }
 
-            foreach ($aggregation as $aggregate) {
+            foreach ($aggregation as $identity => $aggregate) {
+                if (isset($existingPublicationVocabulary[$identity])) {
+                    $existingPublicationVocabulary[$identity]->updateOccurrences($aggregate['occurrences']);
+                    continue;
+                }
+
                 $this->entityManager->persist(new PublicationVocabulary(
                     publication: $publication,
                     vocabularyItem: $aggregate['item'],
                     occurrences: $aggregate['occurrences'],
                 ));
+            }
+
+            foreach ($existingPublicationVocabulary as $identity => $publicationVocabulary) {
+                if (!isset($aggregation[$identity])) {
+                    $this->entityManager->remove($publicationVocabulary);
+                }
             }
 
             $publication->markAnalyzed();
@@ -113,15 +127,27 @@ final readonly class AnalyzePublicationHandler
         return self::IGNORED_ENTITY_TYPES[$token->entityType] ?? false;
     }
 
-    private function deleteExistingAnalysis(Publication $publication): void
+    private function deleteExistingOccurrences(Publication $publication): void
     {
-        $this->entityManager->createQuery('DELETE FROM App\Entity\PublicationVocabulary pv WHERE pv.publication = :publication')
-            ->setParameter('publication', $publication)
-            ->execute();
-
         $this->entityManager->createQuery('DELETE FROM App\Entity\VocabularyOccurrence vo WHERE vo.publication = :publication')
             ->setParameter('publication', $publication)
             ->execute();
+    }
+
+    /**
+     * @return array<string, PublicationVocabulary>
+     */
+    private function findExistingPublicationVocabulary(Publication $publication): array
+    {
+        $rows = $this->publicationVocabularyRepository->findForPublicationOrdered($publication);
+        $publicationVocabulary = [];
+
+        foreach ($rows as $row) {
+            $item = $row->getVocabularyItem();
+            $publicationVocabulary[$this->identity($item->getLanguage(), $item->getLemma(), $item->getPartOfSpeech())] = $row;
+        }
+
+        return $publicationVocabulary;
     }
 
     /**

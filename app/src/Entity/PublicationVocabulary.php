@@ -29,6 +29,9 @@ class PublicationVocabulary
     #[ORM\Column]
     private int $occurrences;
 
+    #[ORM\OneToOne(mappedBy: 'publicationVocabulary', targetEntity: PublicationVocabularyEnrichment::class, cascade: ['persist'], orphanRemoval: true)]
+    private ?PublicationVocabularyEnrichment $enrichment = null;
+
     public function __construct(
         Publication $publication,
         VocabularyItem $vocabularyItem,
@@ -61,5 +64,24 @@ class PublicationVocabulary
     public function getOccurrences(): int
     {
         return $this->occurrences;
+    }
+
+    public function updateOccurrences(int $occurrences): void
+    {
+        if ($occurrences < 0) {
+            throw new \InvalidArgumentException('Occurrences cannot be negative.');
+        }
+
+        $this->occurrences = $occurrences;
+    }
+
+    public function getEnrichment(): ?PublicationVocabularyEnrichment
+    {
+        return $this->enrichment;
+    }
+
+    public function setEnrichment(?PublicationVocabularyEnrichment $enrichment): void
+    {
+        $this->enrichment = $enrichment;
     }
 }

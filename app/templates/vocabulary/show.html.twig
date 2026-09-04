@@ -37,6 +37,74 @@
         </div>
     </section>
 
+    <section class="panel">
+        <h2>AI Enrichment</h2>
+        {% if publicationVocabulary is empty %}
+            <p class="muted">No publication-specific vocabulary entries available.</p>
+        {% else %}
+            <div class="enrichment-list">
+                {% for row in publicationVocabulary %}
+                    {% set enrichment = row.enrichment %}
+                    <article class="enrichment-card">
+                        <div class="enrichment-card__header">
+                            <div>
+                                <strong>
+                                    <a href="{{ path('publication_show', { id: row.publication.id }) }}">{{ row.publication.title }}</a>
+                                </strong>
+                                <div class="muted">{{ row.occurrences }} occurrence{{ row.occurrences == 1 ? '' : 's' }}</div>
+                            </div>
+                            <form method="post" action="{{ path('publication_vocabulary_enrich', { id: row.id }) }}">
+                                <input type="hidden" name="_token" value="{{ csrf_token('publication_vocabulary_enrichment_' ~ row.id) }}">
+                                <button class="button button--small" type="submit">
+                                    {{ enrichment ? 'Regenerate' : 'Generate enrichment' }}
+                                </button>
+                            </form>
+                        </div>
+
+                        {% if enrichment %}
+                            <dl class="definition-list">
+                                <div>
+                                    <dt>Polish translation</dt>
+                                    <dd>{{ enrichment.translationPl }}</dd>
+                                </div>
+                                <div>
+                                    <dt>English definition</dt>
+                                    <dd>{{ enrichment.definitionEn }}</dd>
+                                </div>
+                                <div>
+                                    <dt>Meaning in this context</dt>
+                                    <dd>{{ enrichment.meaningInContext }}</dd>
+                                </div>
+                                <div>
+                                    <dt>Simple example</dt>
+                                    <dd>{{ enrichment.simpleExample }}</dd>
+                                </div>
+                                <div>
+                                    <dt>CEFR</dt>
+                                    <dd>{{ enrichment.cefrLevel ?: '-' }}</dd>
+                                </div>
+                                <div>
+                                    <dt>Source context</dt>
+                                    <dd>{{ enrichment.sourceSentence }}</dd>
+                                </div>
+                                <div>
+                                    <dt>Metadata</dt>
+                                    <dd class="muted">
+                                        {{ enrichment.provider ?: '-' }}
+                                        {% if enrichment.model %} · {{ enrichment.model }}{% endif %}
+                                        {% if enrichment.promptVersion %} · {{ enrichment.promptVersion }}{% endif %}
+                                    </dd>
+                                </div>
+                            </dl>
+                        {% else %}
+                            <p class="muted">No enrichment yet.</p>
+                        {% endif %}
+                    </article>
+                {% endfor %}
+            </div>
+        {% endif %}
+    </section>
+
     <section>
         <h2>Occurrence history</h2>
         {% if occurrences is empty %}

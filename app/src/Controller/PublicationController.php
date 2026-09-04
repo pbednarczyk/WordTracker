@@ -5,12 +5,15 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Application\AnalyzePublicationHandler;
+use App\Application\EnrichPublicationVocabularyHandler;
 use App\Application\PublicationAnalysisException;
 use App\Application\PublicationVocabularyExporter;
 use App\Application\VocabularyStatusManager;
 use App\Entity\Publication;
+use App\Entity\PublicationVocabulary;
 use App\Entity\VocabularyItem;
 use App\Enum\VocabularyStatus;
+use App\Enrichment\VocabularyEnrichmentException;
 use App\Form\Model\PublicationInput;
 use App\Form\PublicationFormType;
 use App\Nlp\TextAnalyzerException;
@@ -34,6 +37,7 @@ final class PublicationController extends AbstractController
         private readonly VocabularyOccurrenceRepository $vocabularyOccurrenceRepository,
         private readonly EntityManagerInterface $entityManager,
         private readonly AnalyzePublicationHandler $analyzePublication,
+        private readonly EnrichPublicationVocabularyHandler $enrichPublicationVocabulary,
         private readonly VocabularyStatusManager $vocabularyStatusManager,
         private readonly PublicationVocabularyExporter $publicationVocabularyExporter,
         private readonly LoggerInterface $logger,
@@ -194,8 +198,80 @@ final class PublicationController extends AbstractController
         return $this->render('vocabulary/show.html.twig', [
             'item' => $item,
             'occurrences' => $this->vocabularyOccurrenceRepository->findForVocabularyItem($item),
+            'publicationVocabulary' => $this->publicationVocabularyRepository->findForVocabularyItemWithEnrichment($item),
             'summary' => $this->vocabularyOccurrenceRepository->getSummaryForVocabularyItem($item),
         ]);
+    }
+
+    #[Route('/publication-vocabulary/{id}/enrichment', name: 'publication_vocabulary_enrich', methods: ['POST'])]
+    public function enrichPublicationVocabulary(PublicationVocabulary $publicationVocabulary, Request $request): RedirectResponse
+    {
+        if (!$this->isCsrfTokenValid($this->publicationVocabularyEnrichmentCsrfTokenId($publicationVocabulary), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Invalid CSRF token.');
+        }
+
+        try {
+            ($this->enrichPublicationVocabulary)($publicationVocabulary);
+            $this->addFlash('success', sprintf('Enrichment generated for "%s".', $publicationVocabulary->getVocabularyItem()->getLemma()));
+        } catch (VocabularyEnrichmentException $exception) {
+            $this->addFlash('error', $exception->getMessage());
+        }
+
+        return $this->redirectToRoute('vocabulary_show', [
+            'id' => $publicationVocabulary->getVocabularyItem()->getId(),
+        ], Response::HTTP_SEE_OTHER);
+    }
+
+    #[Route('/vocabulary/bulk-enrichment', name: 'vocabulary_bulk_enrich', methods: ['POST'])]
+    public function bulkEnrichVocabulary(Request $request): RedirectResponse
+    {
+        $publicationId = (string) $request->request->get('publicationId', '');
+        if (!$this->isCsrfTokenValid($this->bulkVocabularyEnrichmentCsrfTokenId($publicationId), (string) $request->request->get('enrichmentToken'))) {
+            throw $this->createAccessDeniedException('Invalid CSRF token.');
+        }
+
+        $ids = array_map(static fn (mixed $id): int => filter_var($id, FILTER_VALIDATE_INT) ?: 0, $request->request->all('ids'));
+        $ids = array_values(array_filter($ids, static fn (int $id): bool => $id > 0));
+        if ($ids === []) {
+            $this->addFlash('error', 'No vocabulary items selected.');
+
+            return $this->redirectToPublicationFromRequest($request);
+        }
+
+        if (count($ids) > 20) {
+            $this->addFlash('error', 'Bulk enrichment is limited to 20 vocabulary items at a time.');
+
+            return $this->redirectToPublicationFromRequest($request);
+        }
+
+        $publication = $this->publicationRepository->find(filter_var($publicationId, FILTER_VALIDATE_INT) ?: 0);
+        if (!$publication instanceof Publication) {
+            $this->addFlash('error', 'Invalid publication selection.');
+
+            return $this->redirectToPublicationFromRequest($request);
+        }
+
+        $successes = 0;
+        $failures = [];
+        $publicationVocabularyRows = $this->publicationVocabularyRepository->findForPublicationAndVocabularyItemIds($publication, $ids);
+        foreach ($publicationVocabularyRows as $publicationVocabulary) {
+            try {
+                ($this->enrichPublicationVocabulary)($publicationVocabulary);
+                ++$successes;
+            } catch (VocabularyEnrichmentException $exception) {
+                $failures[] = $publicationVocabulary->getVocabularyItem()->getLemma().': '.$exception->getMessage();
+            }
+        }
+
+        if ($successes > 0) {
+            $this->addFlash('success', sprintf('%d enrichment%s generated.', $successes, $successes === 1 ? '' : 's'));
+        }
+
+        if ($failures !== []) {
+            $this->addFlash('error', 'Some enrichments failed: '.implode('; ', array_slice($failures, 0, 3)));
+        }
+
+        return $this->redirectToPublicationFromRequest($request);
     }
 
     #[Route('/vocabulary/{id}/status', name: 'vocabulary_status_update', methods: ['POST'])]
@@ -271,6 +347,16 @@ final class PublicationController extends AbstractController
     private function bulkVocabularyStatusCsrfTokenId(string $publicationId): string
     {
         return 'vocabulary_bulk_status_'.$publicationId;
+    }
+
+    private function publicationVocabularyEnrichmentCsrfTokenId(PublicationVocabulary $publicationVocabulary): string
+    {
+        return 'publication_vocabulary_enrichment_'.$publicationVocabulary->getId();
+    }
+
+    private function bulkVocabularyEnrichmentCsrfTokenId(string $publicationId): string
+    {
+        return 'vocabulary_bulk_enrichment_'.$publicationId;
     }
 
     private function parseOptionalStatus(string $status): ?VocabularyStatus

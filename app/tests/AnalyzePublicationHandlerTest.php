@@ -7,6 +7,7 @@ namespace App\Tests;
 use App\Application\AnalyzePublicationHandler;
 use App\Application\PublicationAnalysisException;
 use App\Entity\Publication;
+use App\Entity\PublicationVocabularyEnrichment;
 use App\Entity\VocabularyItem;
 use App\Enum\PublicationType;
 use App\Enum\VocabularyStatus;
@@ -15,6 +16,7 @@ use App\Nlp\TextAnalysis;
 use App\Nlp\TextAnalyzerException;
 use App\Nlp\TextAnalyzerInterface;
 use App\Repository\VocabularyItemRepository;
+use App\Repository\PublicationVocabularyRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 
@@ -24,6 +26,7 @@ final class AnalyzePublicationHandlerTest extends KernelTestCase
 
     private EntityManagerInterface $entityManager;
     private VocabularyItemRepository $vocabularyItemRepository;
+    private PublicationVocabularyRepository $publicationVocabularyRepository;
 
     protected function setUp(): void
     {
@@ -36,6 +39,10 @@ final class AnalyzePublicationHandlerTest extends KernelTestCase
         $repository = self::getContainer()->get(VocabularyItemRepository::class);
         self::assertInstanceOf(VocabularyItemRepository::class, $repository);
         $this->vocabularyItemRepository = $repository;
+
+        $publicationVocabularyRepository = self::getContainer()->get(PublicationVocabularyRepository::class);
+        self::assertInstanceOf(PublicationVocabularyRepository::class, $publicationVocabularyRepository);
+        $this->publicationVocabularyRepository = $publicationVocabularyRepository;
 
         $this->resetDatabase();
     }
@@ -137,6 +144,42 @@ final class AnalyzePublicationHandlerTest extends KernelTestCase
         self::assertSame(1, $this->findPublicationVocabulary($publication->getId(), 'again'));
     }
 
+    public function testReanalysisPreservesEnrichmentForVocabularyStillInPublication(): void
+    {
+        $publication = $this->persistPublication('He was reluctant to enter the cave.');
+        $analyzer = new MutableAnalyzer([
+            $this->token('reluctant', 'reluctant', 'ADJ', 7),
+        ]);
+        $handler = $this->handler($analyzer);
+
+        $handler($publication);
+        $publicationVocabulary = $this->publicationVocabularyRepository->findForPublicationOrdered($publication)[0];
+        $this->entityManager->persist(new PublicationVocabularyEnrichment(
+            publicationVocabulary: $publicationVocabulary,
+            translationPl: 'niechetny',
+            definitionEn: 'not willing or eager to do something',
+            meaningInContext: 'hesitant to enter',
+            simpleExample: 'She was reluctant to speak.',
+            cefrLevel: 'B2',
+            sourceSentence: 'He was reluctant to enter the cave.',
+            provider: 'test',
+            model: 'fake',
+            promptVersion: 'word-enrichment-v1',
+        ));
+        $this->entityManager->flush();
+
+        $analyzer->tokens = [
+            $this->token('reluctant', 'reluctant', 'ADJ', 7),
+            $this->token('cave', 'cave', 'NOUN', 31),
+        ];
+        $handler($publication);
+        $this->entityManager->clear();
+
+        self::assertSame(2, $this->countRows('publication_vocabulary'));
+        self::assertSame(1, $this->countRows('publication_vocabulary_enrichment'));
+        self::assertSame('niechetny', $this->entityManager->getConnection()->fetchOne('SELECT translation_pl FROM publication_vocabulary_enrichment'));
+    }
+
     public function testNlpFailureDoesNotPersistAnalysis(): void
     {
         $publication = $this->persistPublication('Nothing should be stored.');
@@ -206,6 +249,7 @@ final class AnalyzePublicationHandlerTest extends KernelTestCase
             $analyzer,
             $this->entityManager,
             $this->vocabularyItemRepository,
+            $this->publicationVocabularyRepository,
         );
     }
 

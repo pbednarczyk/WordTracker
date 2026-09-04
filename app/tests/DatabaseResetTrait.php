@@ -14,7 +14,7 @@ trait DatabaseResetTrait
         self::assertSafeTestDatabase($connection);
 
         $connection->executeStatement(
-            'TRUNCATE TABLE publication_vocabulary, vocabulary_occurrence, vocabulary_item, publication RESTART IDENTITY CASCADE',
+            'TRUNCATE TABLE publication_vocabulary_enrichment, publication_vocabulary, vocabulary_occurrence, vocabulary_item, publication RESTART IDENTITY CASCADE',
         );
     }
 

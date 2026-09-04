@@ -6,6 +6,7 @@ namespace App\Repository;
 
 use App\Entity\VocabularyOccurrence;
 use App\Entity\Publication;
+use App\Entity\PublicationVocabulary;
 use App\Entity\VocabularyItem;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
@@ -35,6 +36,20 @@ final class VocabularyOccurrenceRepository extends ServiceEntityRepository
             ->addOrderBy('vo.id', 'ASC')
             ->getQuery()
             ->getResult();
+    }
+
+    public function findRepresentativeForPublicationVocabulary(PublicationVocabulary $publicationVocabulary): ?VocabularyOccurrence
+    {
+        return $this->createQueryBuilder('vo')
+            ->andWhere('vo.publication = :publication')
+            ->andWhere('vo.vocabularyItem = :item')
+            ->setParameter('publication', $publicationVocabulary->getPublication())
+            ->setParameter('item', $publicationVocabulary->getVocabularyItem())
+            ->orderBy('vo.position', 'ASC')
+            ->addOrderBy('vo.id', 'ASC')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
     }
 
     /**

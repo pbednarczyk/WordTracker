@@ -6,6 +6,7 @@ namespace App\Repository;
 
 use App\Entity\Publication;
 use App\Entity\PublicationVocabulary;
+use App\Entity\VocabularyItem;
 use App\Enum\VocabularyStatus;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
 use Doctrine\Persistence\ManagerRegistry;
@@ -37,8 +38,9 @@ final class PublicationVocabularyRepository extends ServiceEntityRepository
         ?string $query = null,
     ): array {
         $queryBuilder = $this->createQueryBuilder('pv')
-            ->addSelect('vi')
+            ->addSelect('vi', 'e')
             ->innerJoin('pv.vocabularyItem', 'vi')
+            ->leftJoin('pv.enrichment', 'e')
             ->andWhere('pv.publication = :publication')
             ->setParameter('publication', $publication);
 
@@ -56,6 +58,49 @@ final class PublicationVocabularyRepository extends ServiceEntityRepository
         }
 
         return $queryBuilder
+            ->orderBy('pv.occurrences', 'DESC')
+            ->addOrderBy('vi.lemma', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * @return list<PublicationVocabulary>
+     */
+    public function findForVocabularyItemWithEnrichment(VocabularyItem $item): array
+    {
+        return $this->createQueryBuilder('pv')
+            ->addSelect('p', 'e')
+            ->innerJoin('pv.publication', 'p')
+            ->leftJoin('pv.enrichment', 'e')
+            ->andWhere('pv.vocabularyItem = :item')
+            ->setParameter('item', $item)
+            ->orderBy('p.createdAt', 'DESC')
+            ->addOrderBy('p.id', 'DESC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * @param list<int> $itemIds
+     *
+     * @return list<PublicationVocabulary>
+     */
+    public function findForPublicationAndVocabularyItemIds(Publication $publication, array $itemIds): array
+    {
+        $itemIds = array_values(array_unique(array_filter($itemIds, static fn (int $id): bool => $id > 0)));
+        if ($itemIds === []) {
+            return [];
+        }
+
+        return $this->createQueryBuilder('pv')
+            ->addSelect('vi', 'e')
+            ->innerJoin('pv.vocabularyItem', 'vi')
+            ->leftJoin('pv.enrichment', 'e')
+            ->andWhere('pv.publication = :publication')
+            ->andWhere('vi.id IN (:itemIds)')
+            ->setParameter('publication', $publication)
+            ->setParameter('itemIds', $itemIds)
             ->orderBy('pv.occurrences', 'DESC')
             ->addOrderBy('vi.lemma', 'ASC')
             ->getQuery()

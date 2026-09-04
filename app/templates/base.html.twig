@@ -291,6 +291,51 @@
                 color: var(--muted);
             }
 
+            .badge--enriched {
+                background: #fff8c5;
+                color: #7d5f00;
+                margin-left: 6px;
+            }
+
+            .enrichment-list {
+                display: grid;
+                gap: 16px;
+            }
+
+            .enrichment-card {
+                padding: 18px;
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+            }
+
+            .enrichment-card__header {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 16px;
+                margin-bottom: 14px;
+            }
+
+            .definition-list {
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 14px;
+                margin: 0;
+            }
+
+            .definition-list dt {
+                color: var(--muted);
+                font-size: 12px;
+                font-weight: 750;
+                text-transform: uppercase;
+            }
+
+            .definition-list dd {
+                margin: 4px 0 0;
+                line-height: 1.5;
+            }
+
             .flash {
                 padding: 12px 14px;
                 border-radius: 8px;
@@ -442,7 +487,8 @@
                 }
 
                 .grid,
-                .form-grid {
+                .form-grid,
+                .definition-list {
                     grid-template-columns: 1fr;
                 }
 

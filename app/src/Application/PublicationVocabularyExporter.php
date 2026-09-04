@@ -23,7 +23,29 @@ final readonly class PublicationVocabularyExporter
         'status',
         'occurrences',
         'language',
+        'translation_pl',
+        'definition_en',
+        'meaning_in_context',
+        'simple_example',
+        'cefr_level',
         'first_context_sentence',
+    ];
+
+    /**
+     * @var list<string>
+     */
+    private const XLSX_HEADERS = [
+        'Lemma',
+        'POS',
+        'Status',
+        'Occurrences',
+        'Language',
+        'Polish Translation',
+        'English Definition',
+        'Meaning in Context',
+        'Simple Example',
+        'CEFR',
+        'Context',
     ];
 
     public function __construct(
@@ -49,12 +71,18 @@ final readonly class PublicationVocabularyExporter
         foreach ($publicationVocabulary as $row) {
             $item = $row->getVocabularyItem();
             $itemId = $item->getId();
+            $enrichment = $row->getEnrichment();
             $rows[] = new VocabularyExportRow(
                 lemma: $item->getLemma(),
                 partOfSpeech: $item->getPartOfSpeech(),
                 status: $item->getStatus()->value,
                 occurrences: $row->getOccurrences(),
                 language: $item->getLanguage(),
+                translationPl: $enrichment?->getTranslationPl() ?? '',
+                definitionEn: $enrichment?->getDefinitionEn() ?? '',
+                meaningInContext: $enrichment?->getMeaningInContext() ?? '',
+                simpleExample: $enrichment?->getSimpleExample() ?? '',
+                cefrLevel: $enrichment?->getCefrLevel() ?? '',
                 firstContextSentence: $itemId === null ? '' : ($contexts[$itemId] ?? ''),
             );
         }
@@ -77,6 +105,11 @@ final readonly class PublicationVocabularyExporter
                 $row->status,
                 $row->occurrences,
                 $row->language,
+                $row->translationPl,
+                $row->definitionEn,
+                $row->meaningInContext,
+                $row->simpleExample,
+                $row->cefrLevel,
                 $row->firstContextSentence,
             ], ',', '"', '');
         }
@@ -96,7 +129,7 @@ final readonly class PublicationVocabularyExporter
     {
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
-        $sheet->fromArray(self::CSV_HEADERS, null, 'A1');
+        $sheet->fromArray(self::XLSX_HEADERS, null, 'A1');
 
         $rowNumber = 2;
         foreach ($this->rows($publication, $status, $query) as $row) {
@@ -106,10 +139,17 @@ final readonly class PublicationVocabularyExporter
                 $row->status,
                 $row->occurrences,
                 $row->language,
+                $row->translationPl,
+                $row->definitionEn,
+                $row->meaningInContext,
+                $row->simpleExample,
+                $row->cefrLevel,
                 $row->firstContextSentence,
             ], null, 'A'.$rowNumber);
             ++$rowNumber;
         }
+
+        $sheet->getStyle('G:K')->getAlignment()->setWrapText(true);
 
         $path = tempnam(sys_get_temp_dir(), 'wordtracker-xlsx-');
         if ($path === false) {
