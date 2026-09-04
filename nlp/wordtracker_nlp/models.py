@@ -1,6 +1,9 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 MAX_TEXT_BYTES = 1_000_000
+CefrLevel = Literal["A1", "A2", "B1", "B2", "C1", "C2"]
 
 
 class AnalyzeRequest(BaseModel):
@@ -60,7 +63,15 @@ class EnrichResponse(BaseModel):
     definition_en: str
     meaning_in_context: str
     simple_example: str
-    cefr_level: str | None
+    cefr_level: CefrLevel | None
     provider: str | None
     model: str | None
     prompt_version: str | None
+
+    @field_validator("translation_pl", "definition_en", "meaning_in_context", "simple_example")
+    @classmethod
+    def enrichment_fields_must_not_be_blank(cls, value: str) -> str:
+        if value.strip() == "":
+            raise ValueError("Enrichment field must not be empty.")
+
+        return value
