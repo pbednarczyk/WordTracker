@@ -45,6 +45,55 @@ final class PublicationUiTest extends WebTestCase
         self::assertSelectorTextContains('h1', 'Publications');
     }
 
+    public function testPublicationListShowsVocabularyCoverageSummary(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Coverage List');
+
+        foreach ([14, 14, 14, 14, 13, 13, 13] as $index => $occurrences) {
+            $this->persistVocabularyRow($publication, 'known-'.$index, 'NOUN', $occurrences, VocabularyStatus::KNOWN);
+        }
+
+        foreach ([2, 2, 1] as $index => $occurrences) {
+            $this->persistVocabularyRow($publication, 'unknown-'.$index, 'NOUN', $occurrences);
+        }
+
+        $this->client->request('GET', '/publications');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('body', 'Coverage List');
+        self::assertSelectorTextContains('body', 'Unknown: 3');
+        self::assertSelectorTextContains('body', '70.0%');
+        self::assertSelectorTextContains('body', '95.0%');
+        self::assertStringContainsString('style="width: 70%', (string) $this->client->getResponse()->getContent());
+    }
+
+    public function testPublicationListShowsCompletedBadgeAtFullVocabularyCoverage(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Completed Vocabulary');
+        $this->persistVocabularyRow($publication, 'the', 'DET', 10, VocabularyStatus::KNOWN);
+        $this->persistVocabularyRow($publication, 'hero', 'NOUN', 3, VocabularyStatus::KNOWN);
+
+        $this->client->request('GET', '/publications');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('body', 'Completed Vocabulary');
+        self::assertSelectorTextContains('body', '100.0%');
+        self::assertSelectorTextContains('body', 'COMPLETED');
+    }
+
+    public function testPublicationListShowsNotAnalyzedWithoutMisleadingZeroCoverage(): void
+    {
+        $this->persistPublication('Unanalyzed List Item');
+
+        $crawler = $this->client->request('GET', '/publications');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('body', 'Unanalyzed List Item');
+        self::assertSelectorTextContains('body', 'Not analyzed');
+        self::assertStringNotContainsString('Unknown: 0', (string) $this->client->getResponse()->getContent());
+        self::assertCount(0, $crawler->filter('.progress__bar'));
+    }
+
     public function testNewPublicationFormLoads(): void
     {
         $this->client->request('GET', '/publications/new');

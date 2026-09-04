@@ -22,20 +22,58 @@
             <thead>
                 <tr>
                     <th>Title</th>
-                    <th>Type</th>
+                    <th>Vocabulary Coverage</th>
+                    <th>Unknown</th>
+                    <th>Text Coverage</th>
                     <th>Language</th>
                     <th>Created</th>
-                    <th>Analyzed</th>
                 </tr>
             </thead>
             <tbody>
                 {% for publication in publications %}
+                    {% set coverage = coverageByPublication[publication.id] ?? null %}
                     <tr>
-                        <td><a href="{{ path('publication_show', { id: publication.id }) }}">{{ publication.title }}</a></td>
-                        <td>{{ publication.type.value }}</td>
+                        <td>
+                            <a href="{{ path('publication_show', { id: publication.id }) }}">{{ publication.title }}</a>
+                            <div class="muted publication-meta">
+                                {{ publication.author ?: '-' }} · {{ publication.type.value|capitalize }}
+                            </div>
+                        </td>
+                        <td class="coverage-cell">
+                            {% if publication.analyzedAt and coverage %}
+                                <div class="coverage-head">
+                                    <span>{{ coverage.vocabularyCoverage }}</span>
+                                    {% if coverage.completed %}
+                                        <span class="badge badge--known">COMPLETED</span>
+                                    {% endif %}
+                                </div>
+                                {% if coverage.vocabularyCoveragePercent is not null %}
+                                    <div class="progress progress--{{ coverage.vocabularyCoverageLevel }}" aria-label="Vocabulary Coverage {{ coverage.vocabularyCoverage }}">
+                                        <div class="progress__bar" style="width: {{ coverage.vocabularyCoveragePercent }}%"></div>
+                                    </div>
+                                {% endif %}
+                            {% elseif publication.analyzedAt %}
+                                <span class="muted">No vocabulary</span>
+                            {% else %}
+                                <span class="muted">Not analyzed</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if publication.analyzedAt and coverage %}
+                                Unknown: {{ coverage.unknownVocabulary }}
+                            {% else %}
+                                <span class="muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if publication.analyzedAt and coverage %}
+                                <span class="muted">{{ coverage.textCoverage }}</span>
+                            {% else %}
+                                <span class="muted">-</span>
+                            {% endif %}
+                        </td>
                         <td>{{ publication.language }}</td>
                         <td>{{ publication.createdAt|date('Y-m-d') }}</td>
-                        <td>{{ publication.analyzedAt ? 'yes' : 'no' }}</td>
                     </tr>
                 {% endfor %}
             </tbody>

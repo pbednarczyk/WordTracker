@@ -89,6 +89,73 @@ final class PublicationVocabularyRepository extends ServiceEntityRepository
             ->getQuery()
             ->getSingleResult();
 
+        return $this->normalizeCoverageStats($row);
+    }
+
+    /**
+     * @param list<Publication> $publications
+     *
+     * @return array<int, array{
+     *     uniqueTotal: int,
+     *     uniqueKnown: int,
+     *     uniqueUnknown: int,
+     *     occurrencesTotal: int,
+     *     occurrencesKnown: int,
+     *     occurrencesUnknown: int
+     * }>
+     */
+    public function getCoverageStatsForPublications(array $publications): array
+    {
+        if ($publications === []) {
+            return [];
+        }
+
+        $rows = $this->createQueryBuilder('pv')
+            ->innerJoin('pv.vocabularyItem', 'vi')
+            ->select('IDENTITY(pv.publication) AS publicationId')
+            ->addSelect('COUNT(pv.id) AS uniqueTotal')
+            ->addSelect('COALESCE(SUM(CASE WHEN vi.status = :known THEN 1 ELSE 0 END), 0) AS uniqueKnown')
+            ->addSelect('COALESCE(SUM(CASE WHEN vi.status = :unknown THEN 1 ELSE 0 END), 0) AS uniqueUnknown')
+            ->addSelect('COALESCE(SUM(pv.occurrences), 0) AS occurrencesTotal')
+            ->addSelect('COALESCE(SUM(CASE WHEN vi.status = :known THEN pv.occurrences ELSE 0 END), 0) AS occurrencesKnown')
+            ->addSelect('COALESCE(SUM(CASE WHEN vi.status = :unknown THEN pv.occurrences ELSE 0 END), 0) AS occurrencesUnknown')
+            ->andWhere('pv.publication IN (:publications)')
+            ->groupBy('pv.publication')
+            ->setParameter('publications', $publications)
+            ->setParameter('known', VocabularyStatus::KNOWN)
+            ->setParameter('unknown', VocabularyStatus::UNKNOWN)
+            ->getQuery()
+            ->getArrayResult();
+
+        $stats = [];
+        foreach ($rows as $row) {
+            $stats[(int) $row['publicationId']] = $this->normalizeCoverageStats($row);
+        }
+
+        return $stats;
+    }
+
+    /**
+     * @param array{
+     *     uniqueTotal: mixed,
+     *     uniqueKnown: mixed,
+     *     uniqueUnknown: mixed,
+     *     occurrencesTotal: mixed,
+     *     occurrencesKnown: mixed,
+     *     occurrencesUnknown: mixed
+     * } $row
+     *
+     * @return array{
+     *     uniqueTotal: int,
+     *     uniqueKnown: int,
+     *     uniqueUnknown: int,
+     *     occurrencesTotal: int,
+     *     occurrencesKnown: int,
+     *     occurrencesUnknown: int
+     * }
+     */
+    private function normalizeCoverageStats(array $row): array
+    {
         return [
             'uniqueTotal' => (int) $row['uniqueTotal'],
             'uniqueKnown' => (int) $row['uniqueKnown'],

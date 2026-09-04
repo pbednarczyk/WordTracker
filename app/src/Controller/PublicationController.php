@@ -43,8 +43,11 @@ final class PublicationController extends AbstractController
     #[Route('/publications', name: 'publication_index', methods: ['GET'])]
     public function index(): Response
     {
+        $publications = $this->publicationRepository->findAllOrderedByCreatedAt();
+
         return $this->render('publication/index.html.twig', [
-            'publications' => $this->publicationRepository->findAllOrderedByCreatedAt(),
+            'publications' => $publications,
+            'coverageByPublication' => $this->buildListCoverage($publications),
         ]);
     }
 
@@ -289,7 +292,7 @@ final class PublicationController extends AbstractController
      *     occurrencesUnknown: int
      * } $stats
      *
-     * @return array<string, int|string>
+     * @return array<string, bool|float|int|string|null>
      */
     private function buildSummary(array $stats): array
     {
@@ -301,17 +304,63 @@ final class PublicationController extends AbstractController
             'knownOccurrences' => $stats['occurrencesKnown'],
             'unknownOccurrences' => $stats['occurrencesUnknown'],
             'vocabularyCoverage' => $this->formatPercentage($stats['uniqueKnown'], $stats['uniqueTotal']),
+            'vocabularyCoveragePercent' => $this->percentage($stats['uniqueKnown'], $stats['uniqueTotal']),
+            'vocabularyCoverageLevel' => $this->coverageLevel($stats['uniqueKnown'], $stats['uniqueTotal']),
             'textCoverage' => $this->formatPercentage($stats['occurrencesKnown'], $stats['occurrencesTotal']),
+            'textCoveragePercent' => $this->percentage($stats['occurrencesKnown'], $stats['occurrencesTotal']),
+            'completed' => $stats['uniqueTotal'] > 0 && $stats['uniqueKnown'] === $stats['uniqueTotal'],
         ];
     }
 
     private function formatPercentage(int $part, int $total): string
     {
-        if ($total === 0) {
+        $percentage = $this->percentage($part, $total);
+        if ($percentage === null) {
             return 'N/A';
         }
 
-        return number_format(($part / $total) * 100, 1).'%';
+        return number_format($percentage, 1).'%';
+    }
+
+    private function percentage(int $part, int $total): ?float
+    {
+        if ($total === 0) {
+            return null;
+        }
+
+        return round(($part / $total) * 100, 1);
+    }
+
+    private function coverageLevel(int $part, int $total): string
+    {
+        $percentage = $this->percentage($part, $total);
+        if ($percentage === null) {
+            return 'none';
+        }
+
+        return match (true) {
+            $percentage >= 100.0 => 'complete',
+            $percentage >= 80.0 => 'high',
+            $percentage >= 50.0 => 'medium',
+            default => 'low',
+        };
+    }
+
+    /**
+     * @param list<Publication> $publications
+     *
+     * @return array<int, array<string, int|string|float|bool|null>>
+     */
+    private function buildListCoverage(array $publications): array
+    {
+        $statsByPublication = $this->publicationVocabularyRepository->getCoverageStatsForPublications($publications);
+        $coverage = [];
+
+        foreach ($statsByPublication as $publicationId => $stats) {
+            $coverage[$publicationId] = $this->buildSummary($stats);
+        }
+
+        return $coverage;
     }
 
     private function redirectToPublicationFromRequest(Request $request): RedirectResponse
