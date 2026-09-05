@@ -113,7 +113,6 @@ Configure the enrichment provider with:
 
 ```text
 VOCABULARY_ENRICHMENT_BASE_URL=http://nlp:8000
-VOCABULARY_ENRICHMENT_MODEL=gemma3
 VOCABULARY_ENRICHMENT_TIMEOUT=120
 ```
 
@@ -145,6 +144,20 @@ Default local model configuration:
 OLLAMA_BASE_URL=http://ollama:11434
 OLLAMA_MODEL=gemma3
 OLLAMA_TIMEOUT_SECONDS=120
+```
+
+`OLLAMA_MODEL` in the repository root `.env` file is the single runtime source
+of truth for the local model. Symfony does not choose or forward the Ollama
+model; it calls NLP `/enrich`, and the NLP service reads `OLLAMA_MODEL`.
+
+To switch models:
+
+```powershell
+# .env
+OLLAMA_MODEL=qwen3:14b
+
+docker compose exec ollama ollama pull qwen3:14b
+docker compose up -d --force-recreate nlp
 ```
 
 Start the stack and pull the configured model:
@@ -404,6 +417,9 @@ The endpoint supports English to Polish. It calls Ollama with structured output
 JSON Schema, parses the generated `response` field, validates it with Pydantic,
 and returns controlled HTTP errors if Ollama is unavailable, times out, has no
 configured model, returns invalid JSON, or returns a schema mismatch.
+The request body does not accept a model override. The model is selected only by
+the NLP container's `OLLAMA_MODEL` environment variable, which is populated from
+the repository root `.env` file by Docker Compose.
 
 Swagger UI is available at:
 

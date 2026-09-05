@@ -12,7 +12,6 @@ final readonly class HttpVocabularyEnrichmentProvider implements VocabularyEnric
     public function __construct(
         private HttpClientInterface $httpClient,
         private string $vocabularyEnrichmentBaseUrl,
-        private string $vocabularyEnrichmentModel,
         private float $vocabularyEnrichmentTimeout,
     ) {
     }
@@ -28,7 +27,6 @@ final readonly class HttpVocabularyEnrichmentProvider implements VocabularyEnric
                     'context_sentence' => $request->contextSentence,
                     'source_language' => $request->sourceLanguage,
                     'target_language' => $request->targetLanguage,
-                    'model' => $this->vocabularyEnrichmentModel,
                 ],
                 'timeout' => $this->vocabularyEnrichmentTimeout,
             ]);
@@ -74,7 +72,7 @@ final readonly class HttpVocabularyEnrichmentProvider implements VocabularyEnric
             simpleExample: $payload['simple_example'],
             cefrLevel: $payload['cefr_level'] ?? null,
             provider: $payload['provider'] ?? null,
-            model: $payload['model'] ?? $this->vocabularyEnrichmentModel,
+            model: $payload['model'] ?? null,
             promptVersion: $payload['prompt_version'] ?? null,
         );
     }

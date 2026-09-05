@@ -238,8 +238,8 @@ final class PublicationController extends AbstractController
             return $this->redirectToPublicationFromRequest($request);
         }
 
-        if (count($ids) > 20) {
-            $this->addFlash('error', 'Bulk enrichment is limited to 20 vocabulary items at a time.');
+        if (count($ids) > 50) {
+            $this->addFlash('error', 'Bulk enrichment is limited to 50 vocabulary items at a time.');
 
             return $this->redirectToPublicationFromRequest($request);
         }

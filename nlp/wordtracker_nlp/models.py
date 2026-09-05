@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 MAX_TEXT_BYTES = 1_000_000
 CefrLevel = Literal["A1", "A2", "B1", "B2", "C1", "C2"]
@@ -41,13 +41,14 @@ class AnalyzeResponse(BaseModel):
 
 
 class EnrichRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     lemma: str
     part_of_speech: str
     original_form: str
     context_sentence: str
     source_language: str = "en"
     target_language: str = "pl"
-    model: str | None = None
 
     @field_validator("lemma", "part_of_speech", "original_form", "context_sentence", "source_language", "target_language")
     @classmethod

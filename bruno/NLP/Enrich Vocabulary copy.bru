@@ -36,7 +36,8 @@ assert {
   res.body.simple_example: isString
   res.body.simple_example: isNotEmpty
   res.body.provider: eq ollama
-  res.body.model: eq gemma3
+  res.body.model: isString
+  res.body.model: isNotEmpty
   res.body.prompt_version: eq word-enrichment-v2
 }
 

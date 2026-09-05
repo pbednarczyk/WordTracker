@@ -85,9 +85,8 @@ class OllamaClient:
         self.last_payload: dict[str, Any] | None = None
 
     def generate_enrichment(self, request: EnrichRequest) -> OllamaEnrichment:
-        model = request.model or self.config.model
         payload = {
-            "model": model,
+            "model": self.config.model,
             "prompt": build_enrichment_prompt(request),
             "stream": False,
             "format": ENRICHMENT_FORMAT_SCHEMA,

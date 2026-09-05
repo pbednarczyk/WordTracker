@@ -30,7 +30,6 @@ services:
       NLP_BASE_URL: http://nlp:8000
       NLP_HEALTH_URL: http://nlp:8000/health
       VOCABULARY_ENRICHMENT_BASE_URL: http://nlp:8000
-      VOCABULARY_ENRICHMENT_MODEL: gemma3
       VOCABULARY_ENRICHMENT_TIMEOUT: "120"
     volumes:
       - ./app:/var/www/app
@@ -67,7 +66,7 @@ services:
       - "8000:8000"
     environment:
       OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: gemma3
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma3}
       OLLAMA_TIMEOUT_SECONDS: "120"
     volumes:
       - ./nlp:/srv/nlp

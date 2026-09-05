@@ -35,8 +35,8 @@ def clear_dependency_overrides() -> None:
     app.dependency_overrides.clear()
 
 
-def enrich_request(model: str | None = None) -> dict[str, str]:
-    payload = {
+def enrich_request() -> dict[str, str]:
+    return {
         "lemma": "willingness",
         "part_of_speech": "NOUN",
         "original_form": "willingness",
@@ -44,10 +44,6 @@ def enrich_request(model: str | None = None) -> dict[str, str]:
         "source_language": "en",
         "target_language": "pl",
     }
-    if model is not None:
-        payload["model"] = model
-
-    return payload
 
 
 def test_enrich_uses_ollama_dependency_and_returns_metadata() -> None:
@@ -73,6 +69,15 @@ def test_enrich_uses_ollama_dependency_and_returns_metadata() -> None:
 def test_enrich_rejects_unsupported_language_pair() -> None:
     payload = enrich_request()
     payload["source_language"] = "de"
+
+    response = TestClient(app).post("/enrich", json=payload)
+
+    assert response.status_code == 422
+
+
+def test_enrich_rejects_model_in_request_body() -> None:
+    payload = enrich_request()
+    payload["model"] = "qwen3:14b"
 
     response = TestClient(app).post("/enrich", json=payload)
 
@@ -115,7 +120,7 @@ def test_ollama_client_sends_model_prompt_and_structured_schema(monkeypatch: pyt
     assert "USER PROVIDED DATA JSON" in str(payload["prompt"])
 
 
-def test_ollama_client_allows_request_model_override(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ollama_client_uses_only_configured_model(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
     def fake_post(url: str, json: dict[str, object], timeout: float) -> httpx.Response:
@@ -133,13 +138,11 @@ def test_ollama_client_allows_request_model_override(monkeypatch: pytest.MonkeyP
 
     monkeypatch.setattr(httpx, "post", fake_post)
 
-    OllamaClient(OllamaConfig(model="gemma3")).generate_enrichment(
-        EnrichRequest.model_validate(enrich_request(model="llama3.1"))
-    )
+    OllamaClient(OllamaConfig(model="qwen3:14b")).generate_enrichment(EnrichRequest.model_validate(enrich_request()))
 
     payload = captured["json"]
     assert isinstance(payload, dict)
-    assert payload["model"] == "llama3.1"
+    assert payload["model"] == "qwen3:14b"
 
 
 def test_ollama_client_rejects_invalid_json(monkeypatch: pytest.MonkeyPatch) -> None:

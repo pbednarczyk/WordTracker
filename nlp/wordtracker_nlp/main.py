@@ -47,7 +47,6 @@ def enrich(request: EnrichRequest, ollama_client: OllamaClient = Depends(get_oll
     except ValueError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
-    model = request.model or ollama_client.config.model
     return EnrichResponse(
         translation_pl=enrichment.translation_pl,
         definition_en=enrichment.definition_en,
@@ -55,6 +54,6 @@ def enrich(request: EnrichRequest, ollama_client: OllamaClient = Depends(get_oll
         simple_example=enrichment.simple_example,
         cefr_level=enrichment.cefr_level,
         provider="ollama",
-        model=model,
+        model=ollama_client.config.model,
         prompt_version=PROMPT_VERSION,
     )
