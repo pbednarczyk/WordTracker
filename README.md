@@ -496,7 +496,7 @@ Response shape:
   "cefr_level": "B2",
   "provider": "ollama",
   "model": "gemma3",
-  "prompt_version": "word-enrichment-v2"
+  "prompt_version": "word-enrichment-v3"
 }
 ```
 
@@ -507,6 +507,10 @@ configured model, returns invalid JSON, or returns a schema mismatch.
 The request body does not accept a model override. The model is selected only by
 the NLP container's `OLLAMA_MODEL` environment variable, which is populated from
 the repository root `.env` file by Docker Compose.
+`simple_example` must contain the target vocabulary item itself or a natural
+inflected form of it, using the same sense as `meaning_in_context`. The NLP
+service validates this with spaCy lemmatization and rejects synonym-only
+examples such as using `changed` for the target lemma `alter`.
 
 Swagger UI is available at:
 

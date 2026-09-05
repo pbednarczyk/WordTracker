@@ -28,7 +28,7 @@ final class HttpVocabularyEnrichmentProviderTest extends TestCase
                 'cefr_level' => 'B2',
                 'provider' => 'ollama',
                 'model' => 'qwen3:14b',
-                'prompt_version' => 'word-enrichment-v2',
+                'prompt_version' => 'word-enrichment-v3',
             ], JSON_THROW_ON_ERROR), [
                 'http_code' => 200,
                 'response_headers' => ['content-type: application/json'],

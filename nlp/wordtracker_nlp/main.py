@@ -1,6 +1,7 @@
 from fastapi import Depends, FastAPI, HTTPException
 
 from wordtracker_nlp.analyzer import TextAnalyzer
+from wordtracker_nlp.enrichment_validation import validate_simple_example_contains_target
 from wordtracker_nlp.models import AnalyzeRequest, AnalyzeResponse, EnrichRequest, EnrichResponse, MAX_TEXT_BYTES
 from wordtracker_nlp.ollama import PROMPT_VERSION, OllamaClient
 
@@ -38,6 +39,7 @@ def enrich(request: EnrichRequest, ollama_client: OllamaClient = Depends(get_oll
 
     try:
         enrichment = ollama_client.generate_enrichment(request)
+        validate_simple_example_contains_target(request, enrichment, analyzer)
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail=str(exc)) from exc
     except ConnectionError as exc:

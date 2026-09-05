@@ -2,7 +2,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from wordtracker_nlp.main import app, get_ollama_client
+from wordtracker_nlp.enrichment_validation import validate_simple_example_contains_target
+from wordtracker_nlp.main import analyzer, app, get_ollama_client
 from wordtracker_nlp.models import EnrichRequest
 from wordtracker_nlp.ollama import ENRICHMENT_FORMAT_SCHEMA, OllamaClient, OllamaConfig, OllamaEnrichment
 
@@ -61,7 +62,7 @@ def test_enrich_uses_ollama_dependency_and_returns_metadata() -> None:
         "cefr_level": "B2",
         "provider": "ollama",
         "model": "fake-model",
-        "prompt_version": "word-enrichment-v2",
+        "prompt_version": "word-enrichment-v3",
     }
     assert fake.requests[0].lemma == "willingness"
 
@@ -117,7 +118,53 @@ def test_ollama_client_sends_model_prompt_and_structured_schema(monkeypatch: pyt
     assert payload["stream"] is False
     assert payload["format"] == ENRICHMENT_FORMAT_SCHEMA
     assert "SYSTEM INSTRUCTIONS" in str(payload["prompt"])
+    assert "The simple_example MUST contain the target vocabulary item itself" in str(payload["prompt"])
+    assert "Do NOT replace the target vocabulary item with a synonym." in str(payload["prompt"])
     assert "USER PROVIDED DATA JSON" in str(payload["prompt"])
+
+
+def test_simple_example_validation_accepts_exact_lemma() -> None:
+    validate_simple_example_contains_target(
+        alter_request(),
+        alter_enrichment("We need to alter the plan."),
+        analyzer,
+    )
+
+
+def test_simple_example_validation_accepts_inflected_form() -> None:
+    validate_simple_example_contains_target(
+        alter_request(),
+        alter_enrichment("The accident altered his life."),
+        analyzer,
+    )
+
+
+def test_simple_example_validation_rejects_synonym_instead_of_target() -> None:
+    with pytest.raises(ValueError, match="simple_example"):
+        validate_simple_example_contains_target(
+            alter_request(),
+            alter_enrichment("The accident changed his life."),
+            analyzer,
+        )
+
+
+def test_simple_example_validation_rejects_unrelated_sentence() -> None:
+    with pytest.raises(ValueError, match="simple_example"):
+        validate_simple_example_contains_target(
+            alter_request(),
+            alter_enrichment("The weather is nice today."),
+            analyzer,
+        )
+
+
+def test_enrich_rejects_simple_example_without_target() -> None:
+    fake = FakeOllamaClient(result=alter_enrichment("The accident changed his life."))
+    app.dependency_overrides[get_ollama_client] = lambda: fake
+
+    response = TestClient(app).post("/enrich", json=alter_request().model_dump())
+
+    assert response.status_code == 502
+    assert "simple_example" in response.json()["detail"]
 
 
 def test_ollama_client_uses_only_configured_model(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -212,3 +259,24 @@ def test_enrich_maps_connection_error_to_503() -> None:
     response = TestClient(app).post("/enrich", json=enrich_request())
 
     assert response.status_code == 503
+
+
+def alter_request() -> EnrichRequest:
+    return EnrichRequest(
+        lemma="alter",
+        part_of_speech="VERB",
+        original_form="alter",
+        context_sentence="We may alter the route if the bridge is closed.",
+        source_language="en",
+        target_language="pl",
+    )
+
+
+def alter_enrichment(simple_example: str) -> OllamaEnrichment:
+    return OllamaEnrichment(
+        translation_pl="zmieniać",
+        definition_en="to change something",
+        meaning_in_context="alter means to change a plan, route, or situation in this context",
+        simple_example=simple_example,
+        cefr_level="B1",
+    )

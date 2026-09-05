@@ -7,7 +7,7 @@ from pydantic import BaseModel, ValidationError, field_validator
 
 from wordtracker_nlp.models import CefrLevel, EnrichRequest
 
-PROMPT_VERSION = "word-enrichment-v2"
+PROMPT_VERSION = "word-enrichment-v3"
 
 ENRICHMENT_FORMAT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -146,7 +146,12 @@ def build_enrichment_prompt(request: EnrichRequest) -> str:
         "Return a concise, natural Polish translation of the target word for this exact usage,\n"
         "a short English definition,\n"
         "an explanation of the meaning in this exact context, one simple English example\n"
-        "using the same meaning, and an estimated CEFR level.\n\n"
+        "using the same meaning, and an estimated CEFR level.\n"
+        "The simple_example MUST contain the target vocabulary item itself\n"
+        "or a natural inflected form of it.\n"
+        "Do NOT replace the target vocabulary item with a synonym.\n"
+        "The example must use the same meaning/sense as meaning_in_context.\n"
+        "Write one short, natural, learner-friendly English sentence.\n\n"
         "USER PROVIDED DATA JSON:\n"
         f"{json.dumps(user_data, ensure_ascii=False, indent=2)}"
     )
