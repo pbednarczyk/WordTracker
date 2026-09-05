@@ -110,6 +110,7 @@
                         {% endfor %}
                         <th>Front</th>
                         <th>Back</th>
+                        <th>Reviews</th>
                         <th>Status</th>
                         <th>Action</th>
                     </tr>
@@ -130,6 +131,15 @@
                             </td>
                             <td>{{ card.front|length > 90 ? card.front|slice(0, 90) ~ '...' : card.front }}</td>
                             <td>{{ card.back|length > 90 ? card.back|slice(0, 90) ~ '...' : card.back }}</td>
+                            {% set stats = reviewStats[card.id] ?? { reviewCount: 0, lastReviewedAt: null } %}
+                            <td>
+                                <strong>{{ stats.reviewCount }}</strong>
+                                {% if stats.lastReviewedAt %}
+                                    <div class="muted">Last {{ stats.lastReviewedAt|date('Y-m-d H:i') }}</div>
+                                {% else %}
+                                    <div class="muted">Never</div>
+                                {% endif %}
+                            </td>
                             <td>
                                 <span class="badge {{ card.vocabularyItem.status.value == 'KNOWN' ? 'badge--known' : 'badge--unknown' }}">{{ card.vocabularyItem.status.value }}</span>
                                 <span class="badge {{ card.active ? 'badge--known' : 'badge--unknown' }}">{{ card.active ? 'ACTIVE' : 'INACTIVE' }}</span>

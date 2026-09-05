@@ -166,7 +166,7 @@ sorted and paginated server-side.
 Use `Study cards` to start the first manual study mode:
 
 ```text
-front -> Reveal answer -> back -> Next
+front -> Reveal answer -> Again / Hard / Good / Easy -> next card
 ```
 
 Study mode uses a temporary HTTP session snapshot of card IDs. A smart queue is
@@ -176,9 +176,39 @@ same card type are avoided as a secondary rule. Refreshing the same session does
 not reshuffle it; starting a new session can produce a new order.
 
 The queue answers only the ordering question for already eligible cards. It does
-not decide when a card is due. It does not change `VocabularyItem.status`, does
-not persist review history, and is not SRS yet. Review ratings, review history,
-and FSRS scheduling are intentionally left for later stages.
+not decide when a card is due and is not SRS yet.
+
+Each study session gets a server-side UUID. Each visible card presentation is
+identified by `studySessionId + studyPosition`, and review persistence has a
+unique database constraint for that pair. Duplicate rating submissions for the
+same presentation return the already recorded review instead of inserting a
+second row.
+
+The card timer is stored server-side in the HTTP session when a card is shown.
+Refreshing the page does not reset it. Persisted response time is clamped to a
+maximum of 30 minutes to avoid unrealistic values from stale browser sessions.
+
+After Reveal, choose one self-assessment rating:
+
+- `AGAIN`: did not remember.
+- `HARD`: remembered with difficulty.
+- `GOOD`: remembered.
+- `EASY`: immediate recall.
+
+Ratings create immutable `LearningReview` rows for the shown `LearningCard`.
+They do not change `VocabularyItem.status`, do not activate or deactivate
+cards, and do not affect publication coverage. `AGAIN` records the failed
+recall but does not reinsert the card into the current queue yet; retry
+scheduling belongs to the future SRS stage.
+
+Open review history at:
+
+```text
+http://localhost:8080/learning/reviews
+```
+
+The review history page is newest-first and supports pagination plus filters by
+rating, card type, publication, and target lemma text.
 
 ## Local AI Enrichment With Ollama
 

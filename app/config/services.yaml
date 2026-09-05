@@ -12,6 +12,9 @@ services:
             int $studyMinSiblingDistance: '%env(int:STUDY_MIN_SIBLING_DISTANCE)%'
             string $fixturesDir: '%kernel.project_dir%/../fixtures'
 
+    App\Clock\ClockInterface:
+        class: App\Clock\SystemClock
+
     App\:
         resource: '../src/'
 

@@ -6,12 +6,14 @@ namespace App\Tests;
 
 use App\Entity\Publication;
 use App\Entity\LearningCard;
+use App\Entity\LearningReview;
 use App\Entity\PublicationVocabulary;
 use App\Entity\PublicationVocabularyEnrichment;
 use App\Entity\VocabularyItem;
 use App\Entity\VocabularyOccurrence;
 use App\Enum\LearningCardType;
 use App\Enum\PublicationType;
+use App\Enum\ReviewRating;
 use App\Enum\VocabularyStatus;
 use App\Enrichment\VocabularyEnrichmentException;
 use App\Enrichment\VocabularyEnrichmentResult;
@@ -787,22 +789,11 @@ final class PublicationUiTest extends WebTestCase
         self::assertSelectorTextContains('body', 'Learning card deactivated.');
     }
 
-    public function testStudyModeShowsFrontRevealBackAndNextWithoutChangingStatus(): void
+    public function testStudyModeShowsFrontRevealBackAndRecordsReviewWithoutChangingStatus(): void
     {
-        $publication = $this->persistAnalyzedPublication('Study source');
-        $first = $this->persistVocabularyRow($publication, 'alpha', 'NOUN', 1);
-        $second = $this->persistVocabularyRow($publication, 'beta', 'NOUN', 1);
-        foreach ([$first, $second] as $index => $item) {
-            $this->persistOccurrence($publication, $item, $item->getLemma(), sprintf('The %s appeared.', $item->getLemma()), $index + 1);
-            $this->persistEnrichment($publication, $item, 'translation '.$item->getLemma(), 'meaning '.$item->getLemma(), sprintf('The %s appeared.', $item->getLemma()));
-        }
-        $this->entityManager->flush();
-
-        foreach ($this->entityManager->getRepository(PublicationVocabulary::class)->findBy(['publication' => $publication]) as $publicationVocabulary) {
-            $this->client->request('POST', '/publication-vocabulary/'.$publicationVocabulary->getId().'/learning-cards/generate', [
-                '_token' => $this->learningCardsToken($publicationVocabulary),
-            ]);
-        }
+        $publication = $this->publicationWithGeneratedForwardCards(['alpha', 'beta']);
+        $first = $this->entityManager->getRepository(VocabularyItem::class)->findOneBy(['lemma' => 'alpha']);
+        self::assertInstanceOf(VocabularyItem::class, $first);
 
         $crawler = $this->client->request('GET', '/learning/study?start=1&publication='.$publication->getId().'&type=FORWARD&status=unknown&q=alpha');
         self::assertResponseIsSuccessful();
@@ -812,12 +803,22 @@ final class PublicationUiTest extends WebTestCase
         $this->client->submit($crawler->selectButton('Reveal answer')->form());
         $this->client->followRedirect();
         self::assertSelectorTextContains('body', 'translation alpha');
+        self::assertSelectorNotExists('form[action="/learning/study/next"]');
+        self::assertSelectorExists('form[action="/learning/study/review"]');
 
         $crawler = $this->client->getCrawler();
-        $this->client->submit($crawler->selectButton('Next')->form());
+        $this->client->submit($crawler->selectButton('Good')->form());
         $this->client->followRedirect();
         self::assertSelectorTextContains('body', 'Session complete');
         self::assertSame('UNKNOWN', $this->vocabularyStatus($first));
+        self::assertSame(1, $this->countRows('learning_review'));
+
+        $review = $this->entityManager->getRepository(LearningReview::class)->findOneBy([]);
+        self::assertInstanceOf(LearningReview::class, $review);
+        self::assertSame(ReviewRating::GOOD, $review->getRating());
+        self::assertNotNull($review->getLearningCard());
+        self::assertSame('alpha', $review->getLearningCard()->getVocabularyItem()->getLemma());
+        self::assertGreaterThanOrEqual(0, $review->getResponseTimeMs());
     }
 
     public function testReverseStudyCardDoesNotLeakTargetBeforeReveal(): void
@@ -848,6 +849,258 @@ final class PublicationUiTest extends WebTestCase
         $this->client->followRedirect();
         self::assertSelectorTextContains('body', 'reluctant');
         self::assertSelectorTextContains('body', 'She was reluctant to speak.');
+    }
+
+    public function testStudyReviewPersistsEveryRatingEnum(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Every rating source');
+        foreach (['again', 'hard', 'good', 'easy'] as $word) {
+            $item = $this->persistVocabularyRow($publication, $word, 'NOUN', 1);
+            $this->persistOccurrence($publication, $item, $word, sprintf('The %s appeared.', $word), 1);
+            $this->persistEnrichment($publication, $item, 'translation '.$word, 'meaning '.$word, sprintf('The %s appeared.', $word));
+        }
+        $this->entityManager->flush();
+        foreach ($this->entityManager->getRepository(PublicationVocabulary::class)->findBy(['publication' => $publication]) as $publicationVocabulary) {
+            $this->client->request('POST', '/publication-vocabulary/'.$publicationVocabulary->getId().'/learning-cards/generate', [
+                '_token' => $this->learningCardsToken($publicationVocabulary),
+            ]);
+        }
+
+        foreach (ReviewRating::cases() as $rating) {
+            $word = strtolower($rating->value);
+            $crawler = $this->client->request('GET', '/learning/study?start=1&publication='.$publication->getId().'&type=FORWARD&q='.$word);
+            self::assertResponseIsSuccessful();
+            $this->client->submit($crawler->selectButton('Reveal answer')->form());
+            $this->client->followRedirect();
+            $this->client->submit($this->client->getCrawler()->selectButton($rating->label())->form());
+            $this->client->followRedirect();
+        }
+
+        $ratings = $this->entityManager->getConnection()->fetchFirstColumn('SELECT rating FROM learning_review ORDER BY rating ASC');
+        self::assertSame(['AGAIN', 'EASY', 'GOOD', 'HARD'], $ratings);
+    }
+
+    public function testStudyReviewCannotBePostedBeforeReveal(): void
+    {
+        $publication = $this->publicationWithGeneratedForwardCards(['alpha']);
+        $crawler = $this->client->request('GET', '/learning/study?start=1&publication='.$publication->getId().'&type=FORWARD&q=alpha');
+        $hidden = $this->studyHiddenValues($crawler);
+
+        $this->client->request('POST', '/learning/study/review', [
+            '_token' => $hidden['_token'],
+            'studySessionId' => $hidden['studySessionId'],
+            'studyPosition' => $hidden['studyPosition'],
+            'cardId' => $hidden['cardId'],
+            'rating' => 'GOOD',
+        ]);
+
+        self::assertResponseRedirects('/learning/study');
+        self::assertSame(0, $this->countRows('learning_review'));
+    }
+
+    public function testStudyReviewRejectsInvalidRating(): void
+    {
+        $publication = $this->publicationWithGeneratedForwardCards(['alpha']);
+        $crawler = $this->client->request('GET', '/learning/study?start=1&publication='.$publication->getId().'&type=FORWARD&q=alpha');
+        $this->client->submit($crawler->selectButton('Reveal answer')->form());
+        $this->client->followRedirect();
+        $hidden = $this->studyHiddenValues($this->client->getCrawler());
+
+        $this->client->request('POST', '/learning/study/review', [
+            '_token' => $hidden['_token'],
+            'studySessionId' => $hidden['studySessionId'],
+            'studyPosition' => $hidden['studyPosition'],
+            'cardId' => $hidden['cardId'],
+            'rating' => 'SUPER_MEGA_EASY',
+        ]);
+
+        self::assertResponseRedirects('/learning/study');
+        self::assertSame(0, $this->countRows('learning_review'));
+    }
+
+    public function testStudyReviewRejectsWrongCardId(): void
+    {
+        $publication = $this->publicationWithGeneratedForwardCards(['alpha', 'beta']);
+        $crawler = $this->client->request('GET', '/learning/study?start=1&publication='.$publication->getId().'&type=FORWARD&q=alpha');
+        $this->client->submit($crawler->selectButton('Reveal answer')->form());
+        $this->client->followRedirect();
+        $hidden = $this->studyHiddenValues($this->client->getCrawler());
+        $wrongCardId = (int) $this->entityManager->getConnection()->fetchOne('SELECT lc.id FROM learning_card lc JOIN vocabulary_item vi ON vi.id = lc.vocabulary_item_id WHERE vi.lemma = :lemma AND lc.type = :type', [
+            'lemma' => 'beta',
+            'type' => LearningCardType::FORWARD->value,
+        ]);
+
+        $this->client->request('POST', '/learning/study/review', [
+            '_token' => $hidden['_token'],
+            'studySessionId' => $hidden['studySessionId'],
+            'studyPosition' => $hidden['studyPosition'],
+            'cardId' => $wrongCardId,
+            'rating' => 'GOOD',
+        ]);
+
+        self::assertResponseRedirects('/learning/study');
+        self::assertSame(0, $this->countRows('learning_review'));
+    }
+
+    public function testStudyReviewRejectsStaleStudySession(): void
+    {
+        $publication = $this->publicationWithGeneratedForwardCards(['alpha', 'beta']);
+        $crawler = $this->client->request('GET', '/learning/study?start=1&publication='.$publication->getId().'&type=FORWARD&q=alpha');
+        $this->client->submit($crawler->selectButton('Reveal answer')->form());
+        $this->client->followRedirect();
+        $staleHidden = $this->studyHiddenValues($this->client->getCrawler());
+
+        $this->client->request('GET', '/learning/study?start=1&publication='.$publication->getId().'&type=FORWARD&q=beta');
+        self::assertResponseIsSuccessful();
+
+        $this->client->request('POST', '/learning/study/review', [
+            '_token' => $staleHidden['_token'],
+            'studySessionId' => $staleHidden['studySessionId'],
+            'studyPosition' => $staleHidden['studyPosition'],
+            'cardId' => $staleHidden['cardId'],
+            'rating' => 'GOOD',
+        ]);
+
+        self::assertResponseRedirects('/learning/study');
+        self::assertSame(0, $this->countRows('learning_review'));
+    }
+
+    public function testDuplicateStudyReviewPostCreatesSingleReview(): void
+    {
+        $publication = $this->publicationWithGeneratedForwardCards(['alpha']);
+        $crawler = $this->client->request('GET', '/learning/study?start=1&publication='.$publication->getId().'&type=FORWARD&q=alpha');
+        $this->client->submit($crawler->selectButton('Reveal answer')->form());
+        $this->client->followRedirect();
+        $hidden = $this->studyHiddenValues($this->client->getCrawler());
+        $payload = [
+            '_token' => $hidden['_token'],
+            'studySessionId' => $hidden['studySessionId'],
+            'studyPosition' => $hidden['studyPosition'],
+            'cardId' => $hidden['cardId'],
+            'rating' => 'GOOD',
+        ];
+
+        $this->client->request('POST', '/learning/study/review', $payload);
+        self::assertResponseRedirects('/learning/study');
+        $this->client->request('POST', '/learning/study/review', $payload);
+
+        self::assertResponseRedirects('/learning/study');
+        self::assertSame(1, $this->countRows('learning_review'));
+    }
+
+    public function testStudyProgressAdvancesAfterRatingNotReveal(): void
+    {
+        $publication = $this->publicationWithGeneratedForwardCards(['alpha', 'beta']);
+        $crawler = $this->client->request('GET', '/learning/study?start=1&publication='.$publication->getId().'&type=FORWARD');
+        self::assertSelectorTextContains('body', 'Card 1 of 2');
+
+        $this->client->submit($crawler->selectButton('Reveal answer')->form());
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', 'Card 1 of 2');
+
+        $this->client->submit($this->client->getCrawler()->selectButton('Good')->form());
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', 'Card 2 of 2');
+    }
+
+    public function testStudyCompletionSummaryUsesPersistedReviews(): void
+    {
+        $publication = $this->publicationWithGeneratedForwardCards(['alpha', 'beta', 'gamma']);
+        $this->client->request('GET', '/learning/study?start=1&publication='.$publication->getId().'&type=FORWARD');
+
+        foreach (['Good', 'Again', 'Easy'] as $ratingLabel) {
+            $crawler = $this->client->getCrawler();
+            $this->client->submit($crawler->selectButton('Reveal answer')->form());
+            $this->client->followRedirect();
+            $this->client->submit($this->client->getCrawler()->selectButton($ratingLabel)->form());
+            $this->client->followRedirect();
+        }
+
+        self::assertSelectorTextContains('body', 'Session complete');
+        self::assertSelectorTextContains('body', 'Reviewed');
+        self::assertSelectorTextContains('body', '3');
+        self::assertSelectorTextContains('body', 'Again');
+        self::assertSelectorTextContains('body', 'Good');
+        self::assertSelectorTextContains('body', 'Easy');
+        self::assertSame(3, $this->countRows('learning_review'));
+    }
+
+    public function testRefreshingAfterRatingDoesNotCreateAnotherReview(): void
+    {
+        $publication = $this->publicationWithGeneratedForwardCards(['alpha']);
+        $crawler = $this->client->request('GET', '/learning/study?start=1&publication='.$publication->getId().'&type=FORWARD&q=alpha');
+        $this->client->submit($crawler->selectButton('Reveal answer')->form());
+        $this->client->followRedirect();
+        $this->client->submit($this->client->getCrawler()->selectButton('Good')->form());
+        $this->client->followRedirect();
+
+        $this->client->request('GET', '/learning/study');
+        self::assertResponseIsSuccessful();
+        self::assertSame(1, $this->countRows('learning_review'));
+    }
+
+    public function testReviewHistoryPageFiltersAndPaginates(): void
+    {
+        $publication = $this->publicationWithGeneratedForwardCards(['alpha', 'beta']);
+        $this->recordReviewForWord($publication, 'alpha', 'Good');
+        $this->recordReviewForWord($publication, 'beta', 'Again');
+
+        $this->client->request('GET', '/learning/reviews?rating=GOOD&type=FORWARD&q=alpha&publication='.$publication->getId().'&perPage=25');
+
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('h1', 'Review History');
+        self::assertSelectorTextContains('body', 'alpha');
+        self::assertSelectorTextContains('body', 'GOOD');
+        self::assertStringNotContainsString('beta', (string) $this->client->getResponse()->getContent());
+        self::assertSelectorTextContains('body', 'Showing 1-1 of 1 reviews');
+    }
+
+    /**
+     * @param list<string> $words
+     */
+    private function publicationWithGeneratedForwardCards(array $words): Publication
+    {
+        $publication = $this->persistAnalyzedPublication('Review source');
+        foreach ($words as $index => $word) {
+            $item = $this->persistVocabularyRow($publication, $word, 'NOUN', 1);
+            $this->persistOccurrence($publication, $item, $word, sprintf('The %s appeared.', $word), $index + 1);
+            $this->persistEnrichment($publication, $item, 'translation '.$word, 'meaning '.$word, sprintf('The %s appeared.', $word));
+        }
+        $this->entityManager->flush();
+
+        foreach ($this->entityManager->getRepository(PublicationVocabulary::class)->findBy(['publication' => $publication]) as $publicationVocabulary) {
+            self::assertInstanceOf(PublicationVocabulary::class, $publicationVocabulary);
+            $this->client->request('POST', '/publication-vocabulary/'.$publicationVocabulary->getId().'/learning-cards/generate', [
+                '_token' => $this->learningCardsToken($publicationVocabulary),
+            ]);
+        }
+
+        return $publication;
+    }
+
+    /**
+     * @return array{_token: string, studySessionId: string, studyPosition: string, cardId: string}
+     */
+    private function studyHiddenValues(Crawler $crawler): array
+    {
+        $form = $crawler->filter('form[action="/learning/study/review"], form[action="/learning/study/reveal"]')->first();
+
+        return [
+            '_token' => (string) $form->filter('input[name="_token"]')->attr('value'),
+            'studySessionId' => (string) $form->filter('input[name="studySessionId"]')->attr('value'),
+            'studyPosition' => (string) $form->filter('input[name="studyPosition"]')->attr('value'),
+            'cardId' => (string) $form->filter('input[name="cardId"]')->attr('value'),
+        ];
+    }
+
+    private function recordReviewForWord(Publication $publication, string $word, string $ratingLabel): void
+    {
+        $crawler = $this->client->request('GET', '/learning/study?start=1&publication='.$publication->getId().'&type=FORWARD&q='.$word);
+        self::assertResponseIsSuccessful();
+        $this->client->submit($crawler->selectButton('Reveal answer')->form());
+        $this->client->followRedirect();
+        $this->client->submit($this->client->getCrawler()->selectButton($ratingLabel)->form());
+        $this->client->followRedirect();
     }
 
     public function testPublicationVocabularyCanBeExportedAsCsv(): void

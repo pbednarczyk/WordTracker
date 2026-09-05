@@ -8,7 +8,10 @@
             <h1>Study</h1>
             <p class="muted">{{ selectedCount }} cards selected</p>
         </div>
-        <a class="button" href="{{ path('learning_cards') }}">Learning Cards</a>
+        <div class="actions">
+            <a class="button" href="{{ path('learning_reviews') }}">Review History</a>
+            <a class="button" href="{{ path('learning_cards') }}">Learning Cards</a>
+        </div>
     </section>
 
     <section class="panel">
@@ -93,23 +96,93 @@
                         </div>
                     {% endif %}
                 </div>
-                <form method="post" action="{{ path('learning_study_next') }}">
+                <form method="post" action="{{ path('learning_study_review') }}" data-rating-form>
                     <input type="hidden" name="_token" value="{{ csrf_token('learning_study') }}">
-                    <button class="button button--primary" type="submit">Next</button>
+                    <input type="hidden" name="studySessionId" value="{{ studySessionId }}">
+                    <input type="hidden" name="studyPosition" value="{{ index }}">
+                    <input type="hidden" name="cardId" value="{{ card.id }}">
+                    <div class="rating-grid">
+                        {% for rating in ratings %}
+                            {% set class = rating.value == 'AGAIN' ? 'button--danger' : (rating.value == 'HARD' ? 'button--warning' : (rating.value == 'GOOD' ? 'button--primary' : 'button--success')) %}
+                            <button class="button rating-button {{ class }}" type="submit" name="rating" value="{{ rating.value }}" data-shortcut="{{ loop.index }}">
+                                {{ rating.label() }}
+                                <small>{{ rating.description() }}</small>
+                            </button>
+                        {% endfor %}
+                    </div>
                 </form>
             {% else %}
-                <form method="post" action="{{ path('learning_study_reveal') }}">
+                <form method="post" action="{{ path('learning_study_reveal') }}" data-reveal-form>
                     <input type="hidden" name="_token" value="{{ csrf_token('learning_study') }}">
+                    <input type="hidden" name="studySessionId" value="{{ studySessionId }}">
+                    <input type="hidden" name="studyPosition" value="{{ index }}">
+                    <input type="hidden" name="cardId" value="{{ card.id }}">
                     <button class="button button--primary" type="submit">Reveal answer</button>
                 </form>
             {% endif %}
         </article>
     {% elseif selectedCount > 0 %}
         <div class="empty">
-            Session complete.
-            Cards reviewed: {{ total }}.
+            <h2>Session complete</h2>
+            {% if summary %}
+                <div class="session-summary">
+                    <div class="session-summary__item">
+                        <span class="muted">Reviewed</span>
+                        <strong>{{ summary.total }}</strong>
+                    </div>
+                    {% for rating in ratings %}
+                        <div class="session-summary__item">
+                            <span class="muted">{{ rating.label() }}</span>
+                            <strong>{{ summary[rating.value] }}</strong>
+                        </div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+            <div class="actions" style="margin-top: 18px;">
+                <a class="button button--primary" href="{{ path('learning_study', { start: 1 }) }}">Start another session</a>
+                <a class="button" href="{{ path('learning_reviews') }}">Review History</a>
+            </div>
         </div>
     {% else %}
         <div class="empty">No active learning cards match the current filters.</div>
     {% endif %}
+
+    <script>
+        (() => {
+            const interactiveSelector = 'input, select, textarea, button, a, label';
+            let submitted = false;
+
+            document.addEventListener('keydown', (event) => {
+                if (submitted || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) {
+                    return;
+                }
+
+                if (event.target instanceof Element && event.target.closest(interactiveSelector)) {
+                    return;
+                }
+
+                const revealForm = document.querySelector('[data-reveal-form]');
+                if (revealForm && (event.key === ' ' || event.key === 'Enter')) {
+                    event.preventDefault();
+                    submitted = true;
+                    revealForm.requestSubmit();
+                    return;
+                }
+
+                const ratingForm = document.querySelector('[data-rating-form]');
+                if (!ratingForm || !['1', '2', '3', '4'].includes(event.key)) {
+                    return;
+                }
+
+                const button = ratingForm.querySelector(`[data-shortcut="${event.key}"]`);
+                if (!(button instanceof HTMLButtonElement)) {
+                    return;
+                }
+
+                event.preventDefault();
+                submitted = true;
+                ratingForm.requestSubmit(button);
+            });
+        })();
+    </script>
 {% endblock %}

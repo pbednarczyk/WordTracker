@@ -1,0 +1,158 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Review History - WordTracker{% endblock %}
+
+{% block body %}
+    <section class="page-header">
+        <div>
+            <h1>Review History</h1>
+            <p class="muted">Immutable review events recorded during study sessions.</p>
+        </div>
+        <a class="button button--primary" href="{{ path('learning_study', { start: 1 }) }}">Study cards</a>
+    </section>
+
+    <section>
+        <div class="toolbar toolbar--stacked">
+            <form class="filter-panel" method="get" action="{{ path('learning_reviews') }}">
+                <input type="hidden" name="page" value="1">
+                <input type="hidden" name="perPage" value="{{ filters.perPage }}">
+
+                <label>
+                    Search
+                    <input type="search" name="q" value="{{ filters.q }}" placeholder="Search target">
+                </label>
+
+                <label>
+                    Rating
+                    <select name="rating">
+                        <option value="all" {{ filters.rating == 'all' ? 'selected' : '' }}>All</option>
+                        {% for rating in ratings %}
+                            <option value="{{ rating.value }}" {{ filters.rating == rating.value ? 'selected' : '' }}>{{ rating.value }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <label>
+                    Card type
+                    <select name="type">
+                        <option value="all" {{ filters.type == 'all' ? 'selected' : '' }}>All</option>
+                        {% for type in types %}
+                            <option value="{{ type.value }}" {{ filters.type == type.value ? 'selected' : '' }}>{{ type.value }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <label>
+                    Publication
+                    <select name="publication">
+                        <option value="all" {{ filters.publication == 'all' ? 'selected' : '' }}>All</option>
+                        {% for publication in publications %}
+                            <option value="{{ publication.id }}" {{ filters.publication == publication.id ? 'selected' : '' }}>{{ publication.title }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <button class="button" type="submit">Apply</button>
+                <a class="button" href="{{ path('learning_reviews') }}">Clear filters</a>
+            </form>
+        </div>
+
+        <div class="table-meta">
+            <span>Showing {{ pagination.firstItem() }}-{{ pagination.lastItem() }} of {{ pagination.totalItems }} reviews</span>
+            <form class="per-page" method="get" action="{{ path('learning_reviews') }}">
+                <input type="hidden" name="q" value="{{ filters.q }}">
+                <input type="hidden" name="rating" value="{{ filters.rating }}">
+                <input type="hidden" name="type" value="{{ filters.type }}">
+                <input type="hidden" name="publication" value="{{ filters.publication }}">
+                <input type="hidden" name="page" value="1">
+                <label>
+                    Per page
+                    <select name="perPage">
+                        {% for option in perPageOptions %}
+                            <option value="{{ option }}" {{ filters.perPage == option ? 'selected' : '' }}>{{ option }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <button class="button button--small" type="submit">Apply</button>
+            </form>
+        </div>
+
+        {% if reviews is empty %}
+            <div class="empty">No reviews match the current filters.</div>
+        {% else %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Reviewed at</th>
+                        <th>Word / target</th>
+                        <th>Card type</th>
+                        <th>Rating</th>
+                        <th>Response time</th>
+                        <th>Publication / context</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for review in reviews %}
+                        {% set card = review.learningCard %}
+                        {% set publicationVocabulary = card ? card.publicationVocabulary : null %}
+                        <tr>
+                            <td>{{ review.reviewedAt|date('Y-m-d H:i:s') }}</td>
+                            <td>
+                                {% if card %}
+                                    <a href="{{ path('vocabulary_show', { id: card.vocabularyItem.id }) }}">{{ card.vocabularyItem.lemma }}</a>
+                                {% else %}
+                                    <span class="muted">Deleted card</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if card %}
+                                    <span class="badge badge--cards">{{ card.type.value }}</span>
+                                {% else %}
+                                    <span class="muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td><span class="badge badge--cards">{{ review.rating.value }}</span></td>
+                            <td>{{ (review.responseTimeMs / 1000)|number_format(1) }}s</td>
+                            <td>
+                                {% if publicationVocabulary %}
+                                    <a href="{{ path('publication_show', { id: publicationVocabulary.publication.id }) }}">{{ publicationVocabulary.publication.title }}</a>
+                                    {% if card.contextSentence %}
+                                        <div class="muted">{{ card.contextSentence|length > 90 ? card.contextSentence|slice(0, 90) ~ '...' : card.contextSentence }}</div>
+                                    {% endif %}
+                                {% elseif card and card.contextSentence %}
+                                    <span class="muted">{{ card.contextSentence|length > 90 ? card.contextSentence|slice(0, 90) ~ '...' : card.contextSentence }}</span>
+                                {% else %}
+                                    <span class="muted">-</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            {% if pagination.totalPages > 1 %}
+                <nav class="pagination" aria-label="Review history pagination">
+                    {% set previousParams = filters|merge({ page: pagination.page - 1 }) %}
+                    {% set nextParams = filters|merge({ page: pagination.page + 1 }) %}
+                    <a class="page-link {{ pagination.page == 1 ? 'page-link--disabled' : '' }}"
+                       href="{{ pagination.page == 1 ? '#' : path('learning_reviews', previousParams) }}"
+                       aria-disabled="{{ pagination.page == 1 ? 'true' : 'false' }}">Previous</a>
+
+                    {% for pageNumber in paginationPages %}
+                        {% if pageNumber is same as('gap-left') or pageNumber is same as('gap-right') %}
+                            <span class="page-gap">...</span>
+                        {% else %}
+                            <a class="page-link {{ pagination.page == pageNumber ? 'page-link--active' : '' }}"
+                               href="{{ path('learning_reviews', filters|merge({ page: pageNumber })) }}"
+                               aria-current="{{ pagination.page == pageNumber ? 'page' : 'false' }}">{{ pageNumber }}</a>
+                        {% endif %}
+                    {% endfor %}
+
+                    <a class="page-link {{ pagination.page == pagination.totalPages ? 'page-link--disabled' : '' }}"
+                       href="{{ pagination.page == pagination.totalPages ? '#' : path('learning_reviews', nextParams) }}"
+                       aria-disabled="{{ pagination.page == pagination.totalPages ? 'true' : 'false' }}">Next</a>
+                </nav>
+            {% endif %}
+        {% endif %}
+    </section>
+{% endblock %}

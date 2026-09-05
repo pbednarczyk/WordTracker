@@ -35,3 +35,12 @@ the API contract and must stay in sync with the code.
 - Ordinary vocabulary must not automatically generate open `CLOZE` cards solely
   by replacing the target token.
 - Study UI must not leak the answer before Reveal.
+- `LearningReview` is an immutable review event for one shown `LearningCard`;
+  it is not attached directly to `VocabularyItem`.
+- Review ratings are self-assessment labels only and must not mutate
+  `VocabularyItem.status`, card activation, or publication coverage.
+- Review persistence must be idempotent per study session presentation
+  (`studySessionId + studyPosition`) so duplicate POSTs do not create duplicate
+  review rows.
+- Smart study queue ordering and future due/scheduling logic are separate
+  concerns. Do not implement FSRS scheduling inside `SmartStudyQueueBuilder`.

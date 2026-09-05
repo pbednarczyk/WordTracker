@@ -151,6 +151,24 @@
                 font-size: 14px;
             }
 
+            .button--danger {
+                border-color: #f0b6c1;
+                background: #fff0f3;
+                color: var(--danger);
+            }
+
+            .button--warning {
+                border-color: #f1d08a;
+                background: #fff8c5;
+                color: #7d5f00;
+            }
+
+            .button--success {
+                border-color: #b4d9c4;
+                background: #ecfdf3;
+                color: var(--success);
+            }
+
             .panel {
                 background: var(--surface);
                 border: 1px solid var(--border);
@@ -358,6 +376,47 @@
 
             .study-card__answer strong {
                 display: block;
+            }
+
+            .rating-grid {
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 10px;
+                margin-top: 18px;
+            }
+
+            .rating-button {
+                width: 100%;
+                min-height: 68px;
+                flex-direction: column;
+                gap: 3px;
+                white-space: normal;
+                text-align: center;
+            }
+
+            .rating-button small {
+                color: inherit;
+                font-weight: 500;
+                opacity: 0.82;
+            }
+
+            .session-summary {
+                display: grid;
+                grid-template-columns: repeat(5, minmax(0, 1fr));
+                gap: 12px;
+                margin-top: 14px;
+            }
+
+            .session-summary__item {
+                padding: 12px;
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                background: var(--surface);
+            }
+
+            .session-summary__item strong {
+                display: block;
+                font-size: 22px;
             }
 
             .definition-list {
@@ -629,8 +688,13 @@
 
                 .grid,
                 .form-grid,
-                .definition-list {
+                .definition-list,
+                .session-summary {
                     grid-template-columns: 1fr;
+                }
+
+                .rating-grid {
+                    grid-template-columns: repeat(2, minmax(0, 1fr));
                 }
 
                 table {
@@ -649,6 +713,7 @@
                         <a href="{{ path('app_home') }}">Home</a>
                         <a href="{{ path('publication_index') }}">Publications</a>
                         <a href="{{ path('learning_cards') }}">Learning</a>
+                        <a href="{{ path('learning_reviews') }}">Review History</a>
                         <a class="button button--primary" href="{{ path('publication_new') }}">Add publication</a>
                     </nav>
                 </div>
