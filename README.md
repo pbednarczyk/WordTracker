@@ -496,7 +496,7 @@ Response shape:
   "cefr_level": "B2",
   "provider": "ollama",
   "model": "gemma3",
-  "prompt_version": "word-enrichment-v3"
+  "prompt_version": "word-enrichment-v4"
 }
 ```
 
@@ -509,8 +509,11 @@ the NLP container's `OLLAMA_MODEL` environment variable, which is populated from
 the repository root `.env` file by Docker Compose.
 `simple_example` must contain the target vocabulary item itself or a natural
 inflected form of it, using the same sense as `meaning_in_context`. The NLP
-service validates this with spaCy lemmatization and rejects synonym-only
-examples such as using `changed` for the target lemma `alter`.
+service validates this with spaCy lemmatization. If only `simple_example` fails
+semantic validation, NLP asks Ollama to repair just that field and validates it
+again before returning the enrichment. Synonym-only examples such as using
+`changed` for the target lemma `alter` are rejected if repair attempts are
+exhausted.
 
 Swagger UI is available at:
 

@@ -1,12 +1,16 @@
+import logging
+
 from fastapi import Depends, FastAPI, HTTPException
 
 from wordtracker_nlp.analyzer import TextAnalyzer
-from wordtracker_nlp.enrichment_validation import validate_simple_example_contains_target
+from wordtracker_nlp.enrichment_validation import EnrichmentValidationError, ValidationIssue, validate_enrichment
 from wordtracker_nlp.models import AnalyzeRequest, AnalyzeResponse, EnrichRequest, EnrichResponse, MAX_TEXT_BYTES
-from wordtracker_nlp.ollama import PROMPT_VERSION, OllamaClient
+from wordtracker_nlp.ollama import OllamaEnrichment, PROMPT_VERSION, OllamaClient
 
 analyzer = TextAnalyzer.from_model("en_core_web_sm")
 app = FastAPI(title="WordTracker NLP")
+logger = logging.getLogger(__name__)
+MAX_REPAIR_ATTEMPTS = 2
 
 
 def get_ollama_client() -> OllamaClient:
@@ -39,7 +43,26 @@ def enrich(request: EnrichRequest, ollama_client: OllamaClient = Depends(get_oll
 
     try:
         enrichment = ollama_client.generate_enrichment(request)
-        validate_simple_example_contains_target(request, enrichment, analyzer)
+    except TimeoutError as exc:
+        raise HTTPException(status_code=504, detail=str(exc)) from exc
+    except ConnectionError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    try:
+        enrichment = validate_or_repair_enrichment(request, enrichment, ollama_client)
+    except EnrichmentValidationError as exc:
+        issue = exc.issues[0]
+        raise HTTPException(
+            status_code=502,
+            detail=(
+                f"Enrichment validation failed after {MAX_REPAIR_ATTEMPTS} repair attempts: "
+                f"field={issue.field} code={issue.code}"
+            ),
+        ) from exc
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail=str(exc)) from exc
     except ConnectionError as exc:
@@ -59,3 +82,65 @@ def enrich(request: EnrichRequest, ollama_client: OllamaClient = Depends(get_oll
         model=ollama_client.config.model,
         prompt_version=PROMPT_VERSION,
     )
+
+
+def validate_or_repair_enrichment(
+    request: EnrichRequest,
+    enrichment: OllamaEnrichment,
+    ollama_client: OllamaClient,
+) -> OllamaEnrichment:
+    try:
+        validate_enrichment(request, enrichment, analyzer)
+        return enrichment
+    except EnrichmentValidationError as exc:
+        if not exc.simple_example_only():
+            raise
+
+        issue = exc.issues[0]
+        last_error = exc
+        logger.warning(
+            "enrichment validation failed",
+            extra={
+                "field": issue.field,
+                "code": issue.code,
+                "phase": "initial_generation",
+                "target": request.lemma,
+            },
+        )
+
+    current_enrichment = enrichment
+    for attempt in range(1, MAX_REPAIR_ATTEMPTS + 1):
+        repaired_simple_example = ollama_client.repair_simple_example(
+            request=request,
+            enrichment=current_enrichment,
+            validation_issue=issue,
+        )
+        current_enrichment = current_enrichment.model_copy(update={"simple_example": repaired_simple_example})
+
+        try:
+            validate_enrichment(request, current_enrichment, analyzer)
+        except EnrichmentValidationError as repair_error:
+            last_error = repair_error
+            issue = repair_error.issues[0]
+            logger.warning(
+                "enrichment validation failed",
+                extra={
+                    "field": issue.field,
+                    "code": issue.code,
+                    "phase": "repair",
+                    "repair_attempt": attempt,
+                    "target": request.lemma,
+                },
+            )
+            continue
+
+        logger.info(
+            "enrichment repair succeeded",
+            extra={
+                "field": "simple_example",
+                "repair_attempt": attempt,
+            },
+        )
+        return current_enrichment
+
+    raise last_error
