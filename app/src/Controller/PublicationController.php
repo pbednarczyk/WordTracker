@@ -18,8 +18,10 @@ use App\Form\Model\PublicationInput;
 use App\Form\PublicationFormType;
 use App\Nlp\TextAnalyzerException;
 use App\Repository\PublicationRepository;
+use App\Repository\PublicationVocabularyQuery;
 use App\Repository\PublicationVocabularyRepository;
 use App\Repository\VocabularyOccurrenceRepository;
+use App\Vocabulary\PartOfSpeech;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -103,23 +105,23 @@ final class PublicationController extends AbstractController
     #[Route('/publications/{id}', name: 'publication_show', methods: ['GET'])]
     public function show(Publication $publication, Request $request): Response
     {
-        $statusFilter = $this->parseOptionalStatus((string) $request->query->get('status', ''));
-        $searchQuery = trim((string) $request->query->get('q', ''));
-        $vocabulary = $this->publicationVocabularyRepository->findForPublicationFiltered(
-            publication: $publication,
-            status: $statusFilter,
-            query: $searchQuery,
-        );
+        $query = PublicationVocabularyQuery::fromParameters($request->query->all());
+        $paginatedVocabulary = $this->publicationVocabularyRepository->findForPublication($publication, $query);
+        $query = $query->withPage($paginatedVocabulary->page);
         $coverageStats = $this->publicationVocabularyRepository->getCoverageStats($publication);
 
         return $this->render('publication/show.html.twig', [
             'publication' => $publication,
-            'vocabulary' => $vocabulary,
+            'vocabulary' => $paginatedVocabulary->items,
+            'pagination' => $paginatedVocabulary,
             'summary' => $this->buildSummary($coverageStats),
-            'filters' => [
-                'status' => $statusFilter?->value ?? 'ALL',
-                'q' => $searchQuery,
-            ],
+            'filters' => $this->tableFilters($query),
+            'sortLinks' => $this->sortLinks($publication, $query),
+            'paginationPages' => $this->paginationPages($paginatedVocabulary->page, $paginatedVocabulary->totalPages),
+            'perPageOptions' => PublicationVocabularyQuery::PER_PAGE_OPTIONS,
+            'posOptions' => PartOfSpeech::VALUES,
+            'exportParams' => ['id' => $publication->getId()] + $query->toUrlParameters(includePagination: false),
+            'hiddenTableState' => $query->toHiddenFields(),
             'textPreview' => $this->preview($publication->getRawText()),
         ]);
     }
@@ -165,10 +167,9 @@ final class PublicationController extends AbstractController
     #[Route('/publications/{id}/vocabulary/export.csv', name: 'publication_vocabulary_export_csv', methods: ['GET'])]
     public function exportVocabularyCsv(Publication $publication, Request $request): Response
     {
-        $statusFilter = $this->parseOptionalStatus((string) $request->query->get('status', ''));
-        $searchQuery = trim((string) $request->query->get('q', ''));
+        $query = PublicationVocabularyQuery::fromParameters($request->query->all());
 
-        return new Response($this->publicationVocabularyExporter->csv($publication, $statusFilter, $searchQuery), Response::HTTP_OK, [
+        return new Response($this->publicationVocabularyExporter->csv($publication, $query), Response::HTTP_OK, [
             'Content-Type' => 'text/csv; charset=UTF-8',
             'Content-Disposition' => HeaderUtils::makeDisposition(
                 HeaderUtils::DISPOSITION_ATTACHMENT,
@@ -180,10 +181,9 @@ final class PublicationController extends AbstractController
     #[Route('/publications/{id}/vocabulary/export.xlsx', name: 'publication_vocabulary_export_xlsx', methods: ['GET'])]
     public function exportVocabularyXlsx(Publication $publication, Request $request): Response
     {
-        $statusFilter = $this->parseOptionalStatus((string) $request->query->get('status', ''));
-        $searchQuery = trim((string) $request->query->get('q', ''));
+        $query = PublicationVocabularyQuery::fromParameters($request->query->all());
 
-        return new Response($this->publicationVocabularyExporter->xlsx($publication, $statusFilter, $searchQuery), Response::HTTP_OK, [
+        return new Response($this->publicationVocabularyExporter->xlsx($publication, $query), Response::HTTP_OK, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
             'Content-Disposition' => HeaderUtils::makeDisposition(
                 HeaderUtils::DISPOSITION_ATTACHMENT,
@@ -359,15 +359,6 @@ final class PublicationController extends AbstractController
         return 'vocabulary_bulk_enrichment_'.$publicationId;
     }
 
-    private function parseOptionalStatus(string $status): ?VocabularyStatus
-    {
-        if ($status === '' || strtoupper($status) === 'ALL') {
-            return null;
-        }
-
-        return VocabularyStatus::tryFrom(strtoupper($status));
-    }
-
     /**
      * @param array{
      *     uniqueTotal: int,
@@ -457,17 +448,128 @@ final class PublicationController extends AbstractController
         }
 
         $parameters = ['id' => $publicationId];
-        $status = (string) $request->request->get('currentStatus', '');
-        if ($status !== '' && strtoupper($status) !== 'ALL') {
-            $parameters['status'] = strtoupper($status);
-        }
-
-        $query = trim((string) $request->request->get('currentQuery', ''));
-        if ($query !== '') {
-            $parameters['q'] = $query;
-        }
+        $parameters += $this->nonDefaultTableParameters(PublicationVocabularyQuery::fromParameters([
+            'q' => $request->request->get('currentQuery', ''),
+            'status' => $request->request->get('currentStatus', 'all'),
+            'enriched' => $request->request->get('currentEnriched', 'all'),
+            'pos' => $request->request->get('currentPos', 'all'),
+            'sort' => $request->request->get('currentSort', PublicationVocabularyQuery::DEFAULT_SORT),
+            'direction' => $request->request->get('currentDirection', PublicationVocabularyQuery::DEFAULT_DIRECTION),
+            'page' => $request->request->get('currentPage', PublicationVocabularyQuery::DEFAULT_PAGE),
+            'perPage' => $request->request->get('currentPerPage', PublicationVocabularyQuery::DEFAULT_PER_PAGE),
+        ]));
 
         return $this->redirectToRoute('publication_show', $parameters, Response::HTTP_SEE_OTHER);
+    }
+
+    /**
+     * @return array<string, string|int>
+     */
+    private function tableFilters(PublicationVocabularyQuery $query): array
+    {
+        return [
+            'q' => $query->search,
+            'status' => strtolower($query->status?->value ?? 'all'),
+            'enriched' => $query->enriched,
+            'pos' => $query->partOfSpeech ?? 'all',
+            'sort' => $query->sort,
+            'direction' => $query->direction,
+            'page' => $query->page,
+            'perPage' => $query->perPage,
+        ];
+    }
+
+    /**
+     * @return array<string, string|int>
+     */
+    private function nonDefaultTableParameters(PublicationVocabularyQuery $query): array
+    {
+        $parameters = [];
+        if ($query->search !== '') {
+            $parameters['q'] = $query->search;
+        }
+        if ($query->status !== null) {
+            $parameters['status'] = strtolower($query->status->value);
+        }
+        if ($query->enriched !== PublicationVocabularyQuery::ENRICHED_ALL) {
+            $parameters['enriched'] = $query->enriched;
+        }
+        if ($query->partOfSpeech !== null) {
+            $parameters['pos'] = $query->partOfSpeech;
+        }
+        if ($query->sort !== PublicationVocabularyQuery::DEFAULT_SORT) {
+            $parameters['sort'] = $query->sort;
+        }
+        if ($query->direction !== PublicationVocabularyQuery::defaultDirectionForSort($query->sort)) {
+            $parameters['direction'] = $query->direction;
+        }
+        if ($query->page !== PublicationVocabularyQuery::DEFAULT_PAGE) {
+            $parameters['page'] = $query->page;
+        }
+        if ($query->perPage !== PublicationVocabularyQuery::DEFAULT_PER_PAGE) {
+            $parameters['perPage'] = $query->perPage;
+        }
+
+        return $parameters;
+    }
+
+    /**
+     * @return array<string, array{params: array<string, string|int>, direction: string}>
+     */
+    private function sortLinks(Publication $publication, PublicationVocabularyQuery $query): array
+    {
+        $links = [];
+        foreach (PublicationVocabularyQuery::SORTS as $sort) {
+            $direction = $query->sort === $sort
+                ? ($query->direction === PublicationVocabularyQuery::DIRECTION_ASC ? PublicationVocabularyQuery::DIRECTION_DESC : PublicationVocabularyQuery::DIRECTION_ASC)
+                : PublicationVocabularyQuery::defaultDirectionForSort($sort);
+
+            $links[$sort] = [
+                'params' => ['id' => $publication->getId()] + (new PublicationVocabularyQuery(
+                    search: $query->search,
+                    status: $query->status,
+                    enriched: $query->enriched,
+                    partOfSpeech: $query->partOfSpeech,
+                    sort: $sort,
+                    direction: $direction,
+                    page: 1,
+                    perPage: $query->perPage,
+                ))->toUrlParameters(),
+                'direction' => $direction,
+            ];
+        }
+
+        return $links;
+    }
+
+    /**
+     * @return list<int|string>
+     */
+    private function paginationPages(int $page, int $totalPages): array
+    {
+        if ($totalPages <= 7) {
+            return range(1, $totalPages);
+        }
+
+        $pages = [1];
+        $start = max(2, $page - 1);
+        $end = min($totalPages - 1, $page + 1);
+
+        if ($start > 2) {
+            $pages[] = 'gap-left';
+        }
+
+        for ($number = $start; $number <= $end; ++$number) {
+            $pages[] = $number;
+        }
+
+        if ($end < $totalPages - 1) {
+            $pages[] = 'gap-right';
+        }
+
+        $pages[] = $totalPages;
+
+        return $pages;
     }
 
     private function redirectAfterVocabularyStatusUpdate(Request $request, VocabularyItem $item): RedirectResponse

@@ -6,6 +6,7 @@ namespace App\Application;
 
 use App\Entity\Publication;
 use App\Enum\VocabularyStatus;
+use App\Repository\PublicationVocabularyQuery;
 use App\Repository\PublicationVocabularyRepository;
 use App\Repository\VocabularyOccurrenceRepository;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -57,13 +58,9 @@ final readonly class PublicationVocabularyExporter
     /**
      * @return list<VocabularyExportRow>
      */
-    public function rows(Publication $publication, ?VocabularyStatus $status = null, ?string $query = null): array
+    public function rows(Publication $publication, PublicationVocabularyQuery|VocabularyStatus|null $filter = null, ?string $query = null): array
     {
-        $publicationVocabulary = $this->publicationVocabularyRepository->findForPublicationFiltered(
-            publication: $publication,
-            status: $status,
-            query: $query,
-        );
+        $publicationVocabulary = $this->publicationVocabularyRepository->findAllForPublication($publication, $this->normalizeQuery($filter, $query));
         $items = array_map(static fn ($row) => $row->getVocabularyItem(), $publicationVocabulary);
         $contexts = $this->vocabularyOccurrenceRepository->findFirstSentencesForPublicationItems($publication, $items);
 
@@ -90,7 +87,7 @@ final readonly class PublicationVocabularyExporter
         return $rows;
     }
 
-    public function csv(Publication $publication, ?VocabularyStatus $status = null, ?string $query = null): string
+    public function csv(Publication $publication, PublicationVocabularyQuery|VocabularyStatus|null $filter = null, ?string $query = null): string
     {
         $stream = fopen('php://temp', 'r+');
         if ($stream === false) {
@@ -98,7 +95,7 @@ final readonly class PublicationVocabularyExporter
         }
 
         fputcsv($stream, self::CSV_HEADERS, ',', '"', '');
-        foreach ($this->rows($publication, $status, $query) as $row) {
+        foreach ($this->rows($publication, $filter, $query) as $row) {
             fputcsv($stream, [
                 $row->lemma,
                 $row->partOfSpeech,
@@ -125,14 +122,14 @@ final readonly class PublicationVocabularyExporter
         return $csv;
     }
 
-    public function xlsx(Publication $publication, ?VocabularyStatus $status = null, ?string $query = null): string
+    public function xlsx(Publication $publication, PublicationVocabularyQuery|VocabularyStatus|null $filter = null, ?string $query = null): string
     {
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
         $sheet->fromArray(self::XLSX_HEADERS, null, 'A1');
 
         $rowNumber = 2;
-        foreach ($this->rows($publication, $status, $query) as $row) {
+        foreach ($this->rows($publication, $filter, $query) as $row) {
             $sheet->fromArray([
                 $row->lemma,
                 $row->partOfSpeech,
@@ -179,5 +176,17 @@ final readonly class PublicationVocabularyExporter
         }
 
         return sprintf('%s-vocabulary.%s', $slug, $extension);
+    }
+
+    private function normalizeQuery(PublicationVocabularyQuery|VocabularyStatus|null $filter, ?string $query): PublicationVocabularyQuery
+    {
+        if ($filter instanceof PublicationVocabularyQuery) {
+            return $filter;
+        }
+
+        return new PublicationVocabularyQuery(
+            search: trim((string) $query),
+            status: $filter,
+        );
     }
 }

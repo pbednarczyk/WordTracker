@@ -9,6 +9,7 @@ use App\Entity\PublicationVocabulary;
 use App\Entity\VocabularyItem;
 use App\Enum\VocabularyStatus;
 use Doctrine\Bundle\DoctrineBundle\Repository\ServiceEntityRepository;
+use Doctrine\ORM\QueryBuilder;
 use Doctrine\Persistence\ManagerRegistry;
 
 /**
@@ -29,6 +30,30 @@ final class PublicationVocabularyRepository extends ServiceEntityRepository
         return $this->findForPublicationFiltered($publication);
     }
 
+    public function findForPublication(Publication $publication, PublicationVocabularyQuery $query): PaginatedPublicationVocabularyResult
+    {
+        $totalItems = $this->countForPublication($publication, $query);
+        $totalPages = max(1, (int) ceil($totalItems / $query->perPage));
+        $page = min($query->page, $totalPages);
+
+        $items = [];
+        if ($totalItems > 0) {
+            $items = $this->baseFilteredQueryBuilder($publication, $query)
+                ->setFirstResult(($page - 1) * $query->perPage)
+                ->setMaxResults($query->perPage)
+                ->getQuery()
+                ->getResult();
+        }
+
+        return new PaginatedPublicationVocabularyResult(
+            items: $items,
+            totalItems: $totalItems,
+            page: $page,
+            perPage: $query->perPage,
+            totalPages: $totalPages,
+        );
+    }
+
     /**
      * @return list<PublicationVocabulary>
      */
@@ -37,29 +62,18 @@ final class PublicationVocabularyRepository extends ServiceEntityRepository
         ?VocabularyStatus $status = null,
         ?string $query = null,
     ): array {
-        $queryBuilder = $this->createQueryBuilder('pv')
-            ->addSelect('vi', 'e')
-            ->innerJoin('pv.vocabularyItem', 'vi')
-            ->leftJoin('pv.enrichment', 'e')
-            ->andWhere('pv.publication = :publication')
-            ->setParameter('publication', $publication);
+        return $this->findAllForPublication($publication, new PublicationVocabularyQuery(
+            search: trim((string) $query),
+            status: $status,
+        ));
+    }
 
-        if ($status !== null) {
-            $queryBuilder
-                ->andWhere('vi.status = :status')
-                ->setParameter('status', $status);
-        }
-
-        $normalizedQuery = trim((string) $query);
-        if ($normalizedQuery !== '') {
-            $queryBuilder
-                ->andWhere('LOWER(vi.lemma) LIKE :lemma')
-                ->setParameter('lemma', '%'.mb_strtolower($normalizedQuery).'%');
-        }
-
-        return $queryBuilder
-            ->orderBy('pv.occurrences', 'DESC')
-            ->addOrderBy('vi.lemma', 'ASC')
+    /**
+     * @return list<PublicationVocabulary>
+     */
+    public function findAllForPublication(Publication $publication, PublicationVocabularyQuery $query): array
+    {
+        return $this->baseFilteredQueryBuilder($publication, $query)
             ->getQuery()
             ->getResult();
     }
@@ -209,5 +223,88 @@ final class PublicationVocabularyRepository extends ServiceEntityRepository
             'occurrencesKnown' => (int) $row['occurrencesKnown'],
             'occurrencesUnknown' => (int) $row['occurrencesUnknown'],
         ];
+    }
+
+    private function countForPublication(Publication $publication, PublicationVocabularyQuery $query): int
+    {
+        $queryBuilder = $this->createQueryBuilder('pv')
+            ->select('COUNT(DISTINCT pv.id)')
+            ->innerJoin('pv.vocabularyItem', 'vi')
+            ->andWhere('pv.publication = :publication')
+            ->setParameter('publication', $publication);
+
+        if ($query->enriched !== PublicationVocabularyQuery::ENRICHED_ALL) {
+            $queryBuilder->leftJoin('pv.enrichment', 'e');
+        }
+
+        $this->applyFilters($queryBuilder, $query);
+
+        return (int) $queryBuilder->getQuery()->getSingleScalarResult();
+    }
+
+    private function baseFilteredQueryBuilder(Publication $publication, PublicationVocabularyQuery $query): QueryBuilder
+    {
+        $queryBuilder = $this->createQueryBuilder('pv')
+            ->addSelect('vi', 'e')
+            ->innerJoin('pv.vocabularyItem', 'vi')
+            ->leftJoin('pv.enrichment', 'e')
+            ->andWhere('pv.publication = :publication')
+            ->setParameter('publication', $publication);
+
+        $this->applyFilters($queryBuilder, $query);
+        $this->applySorting($queryBuilder, $query);
+
+        return $queryBuilder;
+    }
+
+    private function applyFilters(QueryBuilder $queryBuilder, PublicationVocabularyQuery $query): void
+    {
+        if ($query->status !== null) {
+            $queryBuilder
+                ->andWhere('vi.status = :status')
+                ->setParameter('status', $query->status);
+        }
+
+        if ($query->search !== '') {
+            $queryBuilder
+                ->andWhere('LOWER(vi.lemma) LIKE :lemma')
+                ->setParameter('lemma', '%'.mb_strtolower($query->search).'%');
+        }
+
+        if ($query->enriched === PublicationVocabularyQuery::ENRICHED_YES) {
+            $queryBuilder->andWhere('e.id IS NOT NULL');
+        } elseif ($query->enriched === PublicationVocabularyQuery::ENRICHED_NO) {
+            $queryBuilder->andWhere('e.id IS NULL');
+        }
+
+        if ($query->partOfSpeech !== null) {
+            $queryBuilder
+                ->andWhere('vi.partOfSpeech = :partOfSpeech')
+                ->setParameter('partOfSpeech', $query->partOfSpeech);
+        }
+    }
+
+    private function applySorting(QueryBuilder $queryBuilder, PublicationVocabularyQuery $query): void
+    {
+        $direction = strtoupper($query->direction);
+        $sortExpression = match ($query->sort) {
+            PublicationVocabularyQuery::SORT_LEMMA => 'vi.lemma',
+            PublicationVocabularyQuery::SORT_POS => 'vi.partOfSpeech',
+            PublicationVocabularyQuery::SORT_STATUS => 'vi.status',
+            PublicationVocabularyQuery::SORT_ENRICHED => 'enrichmentState',
+            default => 'pv.occurrences',
+        };
+
+        if ($query->sort === PublicationVocabularyQuery::SORT_ENRICHED) {
+            $queryBuilder->addSelect('CASE WHEN e.id IS NULL THEN 0 ELSE 1 END AS HIDDEN enrichmentState');
+        }
+
+        $queryBuilder->orderBy($sortExpression, $direction);
+
+        if ($query->sort !== PublicationVocabularyQuery::SORT_LEMMA) {
+            $queryBuilder->addOrderBy('vi.lemma', 'ASC');
+        }
+
+        $queryBuilder->addOrderBy('pv.id', 'ASC');
     }
 }

@@ -69,46 +69,98 @@
     {% if publication.analyzedAt %}
         <section>
             <h2>Vocabulary</h2>
-            <div class="toolbar">
-                <nav class="filters" aria-label="Vocabulary status filter">
-                    {% for label, value in { 'All': 'ALL', 'Unknown': 'UNKNOWN', 'Known': 'KNOWN' } %}
-                        <a class="filter {{ filters.status == value ? 'filter--active' : '' }}"
-                           href="{{ path('publication_show', { id: publication.id, status: value == 'ALL' ? null : value, q: filters.q ?: null }) }}">
-                            {{ label }}
-                        </a>
-                    {% endfor %}
-                </nav>
-                <form class="search" method="get" action="{{ path('publication_show', { id: publication.id }) }}">
-                    {% if filters.status != 'ALL' %}
-                        <input type="hidden" name="status" value="{{ filters.status }}">
-                    {% endif %}
-                    <input type="search" name="q" value="{{ filters.q }}" placeholder="Search lemma">
-                    <button class="button" type="submit">Search</button>
-                    {% if filters.q %}
-                        <a class="button" href="{{ path('publication_show', { id: publication.id, status: filters.status != 'ALL' ? filters.status : null }) }}">Clear</a>
-                    {% endif %}
+            <div class="toolbar toolbar--stacked">
+                <form class="filter-panel" method="get" action="{{ path('publication_show', { id: publication.id }) }}">
+                    <input type="hidden" name="sort" value="{{ filters.sort }}">
+                    <input type="hidden" name="direction" value="{{ filters.direction }}">
+                    <input type="hidden" name="page" value="1">
+                    <input type="hidden" name="perPage" value="{{ filters.perPage }}">
+
+                    <label>
+                        Search
+                        <input type="search" name="q" value="{{ filters.q }}" placeholder="Search lemma">
+                    </label>
+
+                    <label>
+                        Status
+                        <select name="status">
+                            {% for label, value in { 'All': 'all', 'Unknown': 'unknown', 'Known': 'known' } %}
+                                <option value="{{ value }}" {{ filters.status == value ? 'selected' : '' }}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+
+                    <label>
+                        Enriched
+                        <select name="enriched">
+                            {% for label, value in { 'All': 'all', 'Yes': 'yes', 'No': 'no' } %}
+                                <option value="{{ value }}" {{ filters.enriched == value ? 'selected' : '' }}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+
+                    <label>
+                        Part of Speech
+                        <select name="pos">
+                            <option value="all" {{ filters.pos == 'all' ? 'selected' : '' }}>All</option>
+                            {% for pos in posOptions %}
+                                <option value="{{ pos }}" {{ filters.pos == pos ? 'selected' : '' }}>{{ pos }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+
+                    <button class="button" type="submit">Apply</button>
+                    <a class="button" href="{{ path('publication_show', { id: publication.id }) }}">Clear filters</a>
                 </form>
                 <div class="actions">
-                    <a class="button" href="{{ path('publication_vocabulary_export_csv', { id: publication.id, status: filters.status != 'ALL' ? filters.status : null, q: filters.q ?: null }) }}">Export CSV</a>
-                    <a class="button" href="{{ path('publication_vocabulary_export_xlsx', { id: publication.id, status: filters.status != 'ALL' ? filters.status : null, q: filters.q ?: null }) }}">Export XLSX</a>
+                    <a class="button" href="{{ path('publication_vocabulary_export_csv', exportParams) }}">Export CSV</a>
+                    <a class="button" href="{{ path('publication_vocabulary_export_xlsx', exportParams) }}">Export XLSX</a>
                 </div>
             </div>
 
+            <div class="table-meta">
+                <span>
+                    Showing {{ pagination.firstItem() }}-{{ pagination.lastItem() }} of {{ pagination.totalItems }} words
+                </span>
+                <form class="per-page" method="get" action="{{ path('publication_show', { id: publication.id }) }}">
+                    <input type="hidden" name="q" value="{{ filters.q }}">
+                    <input type="hidden" name="status" value="{{ filters.status }}">
+                    <input type="hidden" name="enriched" value="{{ filters.enriched }}">
+                    <input type="hidden" name="pos" value="{{ filters.pos }}">
+                    <input type="hidden" name="sort" value="{{ filters.sort }}">
+                    <input type="hidden" name="direction" value="{{ filters.direction }}">
+                    <input type="hidden" name="page" value="1">
+                    <label>
+                        Per page
+                        <select name="perPage">
+                            {% for option in perPageOptions %}
+                                <option value="{{ option }}" {{ filters.perPage == option ? 'selected' : '' }}>{{ option }}</option>
+                            {% endfor %}
+                        </select>
+                    </label>
+                    <button class="button button--small" type="submit">Apply</button>
+                </form>
+            </div>
+
             {% if vocabulary is empty %}
-                <div class="empty">No vocabulary rows match this view.</div>
+                <div class="empty">
+                    No vocabulary items match the current filters.
+                    <a href="{{ path('publication_show', { id: publication.id }) }}">Clear filters</a>
+                </div>
             {% else %}
                 <form id="bulk-status-form" method="post" action="{{ path('vocabulary_bulk_status_update') }}">
                     <input type="hidden" name="_token" value="{{ csrf_token('vocabulary_bulk_status_' ~ publication.id) }}">
                     <input type="hidden" name="enrichmentToken" value="{{ csrf_token('vocabulary_bulk_enrichment_' ~ publication.id) }}">
                     <input type="hidden" name="publicationId" value="{{ publication.id }}">
-                    <input type="hidden" name="currentStatus" value="{{ filters.status }}">
-                    <input type="hidden" name="currentQuery" value="{{ filters.q }}">
+                    {% for name, value in hiddenTableState %}
+                        <input type="hidden" name="{{ name }}" value="{{ value }}">
+                    {% endfor %}
                 </form>
 
                 <div class="bulk-actions">
                     <label class="select-all">
                         <input type="checkbox" data-select-visible>
-                        Select all visible
+                        Select all {{ vocabulary|length }} on this page
                     </label>
                     <button class="button" type="submit" name="status" value="KNOWN" form="bulk-status-form">Mark selected as KNOWN</button>
                     <button class="button" type="submit" name="status" value="UNKNOWN" form="bulk-status-form">Mark selected as UNKNOWN</button>
@@ -119,10 +171,17 @@
                     <thead>
                         <tr>
                             <th class="checkbox-column">Select</th>
-                            <th>Word</th>
-                            <th>POS</th>
-                            <th>Occurrences</th>
-                            <th>Status</th>
+                            {% for sort, label in { 'lemma': 'Word', 'pos': 'POS', 'occurrences': 'Occurrences', 'status': 'Status', 'enriched': 'Enriched' } %}
+                                {% set active = filters.sort == sort %}
+                                <th aria-sort="{{ active ? (filters.direction == 'asc' ? 'ascending' : 'descending') : 'none' }}">
+                                    <a class="sort-link" href="{{ path('publication_show', sortLinks[sort].params) }}" title="Sort by {{ label }}">
+                                        {{ label }}
+                                        {% if active %}
+                                            <span aria-hidden="true">{{ (filters.direction == 'asc' ? '&uarr;' : '&darr;')|raw }}</span>
+                                        {% endif %}
+                                    </a>
+                                </th>
+                            {% endfor %}
                             <th>Action</th>
                         </tr>
                     </thead>
@@ -140,16 +199,21 @@
                                     <span class="badge {{ item.status.value == 'KNOWN' ? 'badge--known' : 'badge--unknown' }}">
                                         {{ item.status.value }}
                                     </span>
+                                </td>
+                                <td>
                                     {% if row.enrichment %}
                                         <span class="badge badge--enriched">ENRICHED</span>
+                                    {% else %}
+                                        <span class="muted">No</span>
                                     {% endif %}
                                 </td>
                                 <td>
                                     <form method="post" action="{{ path('vocabulary_status_update', { id: item.id }) }}">
                                         <input type="hidden" name="_token" value="{{ csrf_token('vocabulary_status_' ~ item.id) }}">
                                         <input type="hidden" name="publicationId" value="{{ publication.id }}">
-                                        <input type="hidden" name="currentStatus" value="{{ filters.status }}">
-                                        <input type="hidden" name="currentQuery" value="{{ filters.q }}">
+                                        {% for name, value in hiddenTableState %}
+                                            <input type="hidden" name="{{ name }}" value="{{ value }}">
+                                        {% endfor %}
                                         {% if item.status.value == 'KNOWN' %}
                                             <button class="button button--small" type="submit" name="status" value="UNKNOWN">Mark UNKNOWN</button>
                                         {% else %}
@@ -161,6 +225,31 @@
                         {% endfor %}
                     </tbody>
                 </table>
+
+                {% if pagination.totalPages > 1 %}
+                    <nav class="pagination" aria-label="Vocabulary pagination">
+                        {% set previousParams = { id: publication.id }|merge(filters)|merge({ page: pagination.page - 1 }) %}
+                        {% set nextParams = { id: publication.id }|merge(filters)|merge({ page: pagination.page + 1 }) %}
+                        <a class="page-link {{ pagination.page == 1 ? 'page-link--disabled' : '' }}"
+                           href="{{ pagination.page == 1 ? '#' : path('publication_show', previousParams) }}"
+                           aria-disabled="{{ pagination.page == 1 ? 'true' : 'false' }}">Previous</a>
+
+                        {% for pageNumber in paginationPages %}
+                            {% if pageNumber is same as('gap-left') or pageNumber is same as('gap-right') %}
+                                <span class="page-gap">...</span>
+                            {% else %}
+                                {% set pageParams = { id: publication.id }|merge(filters)|merge({ page: pageNumber }) %}
+                                <a class="page-link {{ pagination.page == pageNumber ? 'page-link--active' : '' }}"
+                                   href="{{ path('publication_show', pageParams) }}"
+                                   aria-current="{{ pagination.page == pageNumber ? 'page' : 'false' }}">{{ pageNumber }}</a>
+                            {% endif %}
+                        {% endfor %}
+
+                        <a class="page-link {{ pagination.page == pagination.totalPages ? 'page-link--disabled' : '' }}"
+                           href="{{ pagination.page == pagination.totalPages ? '#' : path('publication_show', nextParams) }}"
+                           aria-disabled="{{ pagination.page == pagination.totalPages ? 'true' : 'false' }}">Next</a>
+                    </nav>
+                {% endif %}
             {% endif %}
         </section>
     {% endif %}

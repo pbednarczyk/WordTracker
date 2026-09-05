@@ -22,6 +22,7 @@ use Doctrine\ORM\EntityManagerInterface;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\DomCrawler\Crawler;
 
 final class PublicationUiTest extends WebTestCase
 {
@@ -341,6 +342,133 @@ final class PublicationUiTest extends WebTestCase
         self::assertStringNotContainsString('<td>hero</td>', (string) $this->client->getResponse()->getContent());
     }
 
+    public function testVocabularyFiltersSupportStatusEnrichedPosAndSearch(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Advanced filters');
+        $reluctant = $this->persistVocabularyRow($publication, 'reluctant', 'NOUN', 4);
+        $hero = $this->persistVocabularyRow($publication, 'hero', 'NOUN', 3, VocabularyStatus::KNOWN);
+        $running = $this->persistVocabularyRow($publication, 'running', 'VERB', 7, VocabularyStatus::KNOWN);
+        $ready = $this->persistVocabularyRow($publication, 'ready', 'ADJ', 2);
+        $this->persistEnrichment($publication, $running, 'biegnacy');
+        $this->persistEnrichment($publication, $ready, 'gotowy');
+        $this->entityManager->flush();
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?status=unknown');
+        self::assertSame(['reluctant', 'ready'], $this->visibleVocabularyLemmas($crawler));
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?status=known');
+        self::assertSame(['running', 'hero'], $this->visibleVocabularyLemmas($crawler));
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?enriched=yes');
+        self::assertSame(['running', 'ready'], $this->visibleVocabularyLemmas($crawler));
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?enriched=no');
+        self::assertSame(['reluctant', 'hero'], $this->visibleVocabularyLemmas($crawler));
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?pos=NOUN');
+        self::assertSame(['reluctant', 'hero'], $this->visibleVocabularyLemmas($crawler));
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?pos=VERB');
+        self::assertSame(['running'], $this->visibleVocabularyLemmas($crawler));
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?pos=ADJ');
+        self::assertSame(['ready'], $this->visibleVocabularyLemmas($crawler));
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?status=unknown&enriched=no&pos=NOUN&q=reluct');
+        self::assertSame(['reluctant'], $this->visibleVocabularyLemmas($crawler));
+
+        self::assertNotNull($reluctant->getId());
+    }
+
+    public function testVocabularySortingUsesWhitelistedDeterministicColumns(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Sortable vocabulary');
+        $alpha = $this->persistVocabularyRow($publication, 'alpha', 'NOUN', 2);
+        $beta = $this->persistVocabularyRow($publication, 'beta', 'VERB', 2, VocabularyStatus::KNOWN);
+        $gamma = $this->persistVocabularyRow($publication, 'gamma', 'ADJ', 5);
+        $delta = $this->persistVocabularyRow($publication, 'delta', 'NOUN', 1, VocabularyStatus::KNOWN);
+        $this->persistEnrichment($publication, $beta, 'beta');
+        $this->persistEnrichment($publication, $gamma, 'gamma');
+        $this->entityManager->flush();
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?sort=lemma&direction=asc');
+        self::assertSame(['alpha', 'beta', 'delta', 'gamma'], $this->visibleVocabularyLemmas($crawler));
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?sort=lemma&direction=desc');
+        self::assertSame(['gamma', 'delta', 'beta', 'alpha'], $this->visibleVocabularyLemmas($crawler));
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?sort=occurrences&direction=desc');
+        self::assertSame(['gamma', 'alpha', 'beta', 'delta'], $this->visibleVocabularyLemmas($crawler));
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?sort=occurrences&direction=asc');
+        self::assertSame(['delta', 'alpha', 'beta', 'gamma'], $this->visibleVocabularyLemmas($crawler));
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?sort=status&direction=asc');
+        self::assertSame(['beta', 'delta', 'alpha', 'gamma'], $this->visibleVocabularyLemmas($crawler));
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?sort=pos&direction=asc');
+        self::assertSame(['gamma', 'alpha', 'delta', 'beta'], $this->visibleVocabularyLemmas($crawler));
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?sort=enriched&direction=desc');
+        self::assertSame(['beta', 'gamma', 'alpha', 'delta'], $this->visibleVocabularyLemmas($crawler));
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?sort=DROP%20TABLE&direction=banana');
+        self::assertSame(['gamma', 'alpha', 'beta', 'delta'], $this->visibleVocabularyLemmas($crawler));
+    }
+
+    public function testVocabularyPaginationUsesDatabaseLimitsAndMetadata(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Paginated vocabulary');
+        for ($index = 1; $index <= 120; ++$index) {
+            $this->persistVocabularyRow($publication, sprintf('word-%03d', $index), 'NOUN', 1, VocabularyStatus::UNKNOWN, false);
+        }
+        $this->entityManager->flush();
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?sort=lemma&direction=asc&perPage=50');
+        self::assertSame(50, $crawler->filter('tbody tr')->count());
+        self::assertSelectorTextContains('body', 'Showing 1-50 of 120 words');
+        self::assertSelectorTextContains('body', '3');
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?sort=lemma&direction=asc&page=2&perPage=50');
+        self::assertSame(50, $crawler->filter('tbody tr')->count());
+        self::assertSelectorTextContains('body', 'Showing 51-100 of 120 words');
+        self::assertSame('word-051', $this->visibleVocabularyLemmas($crawler)[0]);
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?sort=lemma&direction=asc&page=3&perPage=50');
+        self::assertSame(20, $crawler->filter('tbody tr')->count());
+        self::assertSelectorTextContains('body', 'Showing 101-120 of 120 words');
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?page=999999&perPage=99999');
+        self::assertSame(20, $crawler->filter('tbody tr')->count());
+        self::assertSelectorTextContains('body', 'Showing 101-120 of 120 words');
+    }
+
+    public function testVocabularyFilterAndPaginationCountsUseFilteredRows(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Filtered pagination');
+        for ($index = 1; $index <= 15; ++$index) {
+            $this->persistVocabularyRow($publication, sprintf('match-%03d', $index), 'NOUN', 1);
+        }
+        for ($index = 1; $index <= 15; ++$index) {
+            $item = $this->persistVocabularyRow($publication, sprintf('enriched-%03d', $index), 'NOUN', 1);
+            $this->persistEnrichment($publication, $item, 'enriched');
+        }
+        for ($index = 1; $index <= 30; ++$index) {
+            $this->persistVocabularyRow($publication, sprintf('known-%03d', $index), 'NOUN', 1, VocabularyStatus::KNOWN);
+        }
+        for ($index = 1; $index <= 60; ++$index) {
+            $this->persistVocabularyRow($publication, sprintf('verb-%03d', $index), 'VERB', 1);
+        }
+        $this->entityManager->flush();
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId().'?status=unknown&pos=NOUN&enriched=no&perPage=25&sort=lemma&direction=asc');
+
+        self::assertSame(15, $crawler->filter('tbody tr')->count());
+        self::assertSelectorTextContains('body', 'Showing 1-15 of 15 words');
+        self::assertStringNotContainsString('page=2', (string) $this->client->getResponse()->getContent());
+        self::assertSame('match-001', $this->visibleVocabularyLemmas($crawler)[0]);
+    }
+
     public function testPublicationDetailsDisplayCoverageMetrics(): void
     {
         $publication = $this->persistAnalyzedPublication('Coverage UI');
@@ -530,6 +658,43 @@ final class PublicationUiTest extends WebTestCase
         self::assertStringNotContainsString('the,DET,KNOWN', $csv);
     }
 
+    public function testPublicationVocabularyExportsRespectFiltersSortAndIgnorePagination(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Filtered paginated export');
+        for ($index = 1; $index <= 60; ++$index) {
+            $item = $this->persistVocabularyRow($publication, sprintf('match-%03d', $index), 'ADJ', $index);
+            $this->persistEnrichment($publication, $item, 'match');
+        }
+        for ($index = 1; $index <= 10; ++$index) {
+            $this->persistVocabularyRow($publication, sprintf('other-%03d', $index), 'NOUN', $index);
+        }
+        $this->entityManager->flush();
+
+        $url = '/publications/'.$publication->getId().'/vocabulary/export.csv?status=unknown&enriched=yes&pos=ADJ&sort=occurrences&direction=desc&page=2&perPage=25';
+        $this->client->request('GET', $url);
+
+        self::assertResponseIsSuccessful();
+        $rows = array_map(static fn (string $line): array => str_getcsv($line, ',', '"', ''), array_filter(explode("\n", trim((string) $this->client->getResponse()->getContent()))));
+        self::assertCount(61, $rows);
+        self::assertSame(['match-060', 'ADJ', 'UNKNOWN', '60', 'en'], array_slice($rows[1], 0, 5));
+        self::assertSame(['match-001', 'ADJ', 'UNKNOWN', '1', 'en'], array_slice($rows[60], 0, 5));
+
+        $this->client->request('GET', '/publications/'.$publication->getId().'/vocabulary/export.xlsx?status=unknown&enriched=yes&pos=ADJ&sort=occurrences&direction=desc&page=2&perPage=25');
+        self::assertResponseIsSuccessful();
+
+        $path = tempnam(sys_get_temp_dir(), 'wordtracker-test-xlsx-');
+        self::assertIsString($path);
+        file_put_contents($path, (string) $this->client->getResponse()->getContent());
+
+        try {
+            $sheet = IOFactory::load($path)->getActiveSheet();
+            self::assertSame('match-060', $sheet->getCell('A2')->getValue());
+            self::assertSame('match-001', $sheet->getCell('A61')->getValue());
+        } finally {
+            @unlink($path);
+        }
+    }
+
     public function testPublicationVocabularyCanBeExportedAsXlsx(): void
     {
         $publication = $this->persistAnalyzedPublication('XLSX Export');
@@ -609,6 +774,7 @@ final class PublicationUiTest extends WebTestCase
         string $partOfSpeech,
         int $occurrences,
         VocabularyStatus $status = VocabularyStatus::UNKNOWN,
+        bool $flush = true,
     ): VocabularyItem {
         $item = new VocabularyItem('en', $lemma, $partOfSpeech);
         if ($status === VocabularyStatus::KNOWN) {
@@ -617,7 +783,9 @@ final class PublicationUiTest extends WebTestCase
 
         $this->entityManager->persist($item);
         $this->entityManager->persist(new PublicationVocabulary($publication, $item, $occurrences));
-        $this->entityManager->flush();
+        if ($flush) {
+            $this->entityManager->flush();
+        }
 
         return $item;
     }
@@ -692,6 +860,14 @@ final class PublicationUiTest extends WebTestCase
             'SELECT status FROM vocabulary_item WHERE id = :id',
             ['id' => $item->getId()],
         );
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function visibleVocabularyLemmas(Crawler $crawler): array
+    {
+        return $crawler->filter('tbody tr td:nth-child(2) a')->each(static fn (Crawler $node): string => trim($node->text()));
     }
 
     private function token(string $text, string $lemma, string $pos, int $position): AnalyzedToken
