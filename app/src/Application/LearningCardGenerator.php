@@ -6,10 +6,8 @@ namespace App\Application;
 
 use App\Entity\LearningCard;
 use App\Entity\PublicationVocabulary;
-use App\Entity\VocabularyOccurrence;
 use App\Enum\LearningCardType;
 use App\Repository\LearningCardRepository;
-use App\Repository\VocabularyOccurrenceRepository;
 use Doctrine\ORM\EntityManagerInterface;
 
 final readonly class LearningCardGenerator
@@ -17,7 +15,7 @@ final readonly class LearningCardGenerator
     public function __construct(
         private EntityManagerInterface $entityManager,
         private LearningCardRepository $learningCardRepository,
-        private VocabularyOccurrenceRepository $vocabularyOccurrenceRepository,
+        private LearningCardGenerationPolicy $generationPolicy,
     ) {
     }
 
@@ -31,12 +29,11 @@ final readonly class LearningCardGenerator
         $item = $publicationVocabulary->getVocabularyItem();
         $existingTypes = $this->learningCardRepository->existingTypesForPublicationVocabulary($publicationVocabulary);
         $contextSentence = $enrichment->getSourceSentence();
-        $representativeOccurrence = $this->vocabularyOccurrenceRepository->findRepresentativeForPublicationVocabulary($publicationVocabulary);
         $created = 0;
         $existing = 0;
         $skippedCloze = 0;
 
-        foreach ($this->buildCandidates($publicationVocabulary, $representativeOccurrence, $contextSentence) as $candidate) {
+        foreach ($this->buildCandidates($publicationVocabulary, $contextSentence) as $candidate) {
             if (in_array($candidate['type'], $existingTypes, true)) {
                 ++$existing;
                 continue;
@@ -90,7 +87,6 @@ final readonly class LearningCardGenerator
      */
     private function buildCandidates(
         PublicationVocabulary $publicationVocabulary,
-        ?VocabularyOccurrence $representativeOccurrence,
         string $contextSentence,
     ): array {
         $item = $publicationVocabulary->getVocabularyItem();
@@ -99,61 +95,41 @@ final readonly class LearningCardGenerator
 
         $lemma = $item->getLemma();
         $translation = $enrichment->getTranslationPl();
-        $clozeSentence = $this->buildClozeSentence($contextSentence, $representativeOccurrence?->getOriginalForm() ?? $lemma);
+        $candidates = [];
 
-        return [
-            [
-                'type' => LearningCardType::FORWARD,
-                'front' => $lemma,
-                'back' => $translation,
-                'contextSentence' => $contextSentence,
-                'clozeSentence' => null,
-            ],
-            [
-                'type' => LearningCardType::REVERSE,
-                'front' => $translation,
-                'back' => $lemma,
-                'contextSentence' => $contextSentence,
-                'clozeSentence' => null,
-            ],
-            [
-                'type' => LearningCardType::CLOZE,
-                'front' => $clozeSentence ?? '',
-                'back' => $lemma,
-                'contextSentence' => $contextSentence,
-                'clozeSentence' => $clozeSentence,
-            ],
-            [
-                'type' => LearningCardType::CONTEXT_MEANING,
-                'front' => sprintf("What does \"%s\" mean in this sentence?\n\n\"%s\"", $lemma, $contextSentence),
-                'back' => $enrichment->getMeaningInContext(),
-                'contextSentence' => $contextSentence,
-                'clozeSentence' => null,
-            ],
-        ];
-    }
-
-    private function buildClozeSentence(string $sentence, string $originalForm): ?string
-    {
-        $sentence = trim($sentence);
-        $originalForm = trim($originalForm);
-        if ($sentence === '' || $originalForm === '') {
-            return null;
+        foreach ($this->generationPolicy->defaultTypesFor($publicationVocabulary) as $type) {
+            $candidates[] = match ($type) {
+                LearningCardType::FORWARD => [
+                    'type' => LearningCardType::FORWARD,
+                    'front' => $lemma,
+                    'back' => $translation,
+                    'contextSentence' => $contextSentence,
+                    'clozeSentence' => null,
+                ],
+                LearningCardType::REVERSE => [
+                    'type' => LearningCardType::REVERSE,
+                    'front' => sprintf("Recall the target English word:\n\n%s", $translation),
+                    'back' => $lemma,
+                    'contextSentence' => $contextSentence,
+                    'clozeSentence' => null,
+                ],
+                LearningCardType::CONTEXT_MEANING => [
+                    'type' => LearningCardType::CONTEXT_MEANING,
+                    'front' => sprintf("What does \"%s\" mean in this context?\n\n\"%s\"", $lemma, $contextSentence),
+                    'back' => $enrichment->getMeaningInContext(),
+                    'contextSentence' => $contextSentence,
+                    'clozeSentence' => null,
+                ],
+                LearningCardType::CLOZE => [
+                    'type' => LearningCardType::CLOZE,
+                    'front' => '',
+                    'back' => $lemma,
+                    'contextSentence' => $contextSentence,
+                    'clozeSentence' => null,
+                ],
+            };
         }
 
-        $pattern = '/(?<![\p{L}\p{N}_])'.preg_quote($originalForm, '/').'(?![\p{L}\p{N}_])/iu';
-        $matches = [];
-        $matchCount = preg_match_all($pattern, $sentence, $matches);
-
-        if ($matchCount !== 1) {
-            return null;
-        }
-
-        $cloze = preg_replace($pattern, '_____', $sentence, 1);
-        if (!is_string($cloze)) {
-            return null;
-        }
-
-        return $cloze;
+        return $candidates;
     }
 }

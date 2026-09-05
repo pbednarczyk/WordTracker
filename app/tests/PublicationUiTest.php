@@ -597,7 +597,7 @@ final class PublicationUiTest extends WebTestCase
         self::assertSame(2, $this->countRows('publication_vocabulary_enrichment'));
     }
 
-    public function testGenerateLearningCardsCreatesFourTypesAndIsIdempotent(): void
+    public function testGenerateLearningCardsCreatesDefaultTypesAndIsIdempotent(): void
     {
         $publication = $this->persistAnalyzedPublication('Learning Cards Source');
         $item = $this->persistVocabularyRow($publication, 'reluctant', 'ADJ', 1);
@@ -608,23 +608,26 @@ final class PublicationUiTest extends WebTestCase
         $crawler = $this->client->request('GET', '/vocabulary/'.$item->getId());
         $this->client->submit($crawler->selectButton('Generate learning cards')->form());
         self::assertResponseRedirects('/vocabulary/'.$item->getId());
-        self::assertSame(4, $this->countRows('learning_card'));
+        self::assertSame(3, $this->countRows('learning_card'));
 
         $cards = $this->learningCards();
         self::assertSame('reluctant', $cards[LearningCardType::FORWARD->value]->getFront());
         self::assertSame('niechetny / wahajacy sie', $cards[LearningCardType::FORWARD->value]->getBack());
-        self::assertSame('niechetny / wahajacy sie', $cards[LearningCardType::REVERSE->value]->getFront());
+        self::assertStringContainsString('Recall the target English word', $cards[LearningCardType::REVERSE->value]->getFront());
+        self::assertStringContainsString('niechetny / wahajacy sie', $cards[LearningCardType::REVERSE->value]->getFront());
+        self::assertStringNotContainsString('reluctant', $cards[LearningCardType::REVERSE->value]->getFront());
         self::assertSame('reluctant', $cards[LearningCardType::REVERSE->value]->getBack());
-        self::assertSame('She was _____ to speak.', $cards[LearningCardType::CLOZE->value]->getClozeSentence());
+        self::assertArrayNotHasKey(LearningCardType::CLOZE->value, $cards);
         self::assertStringContainsString('She was reluctant to speak.', (string) $cards[LearningCardType::CONTEXT_MEANING->value]->getContextSentence());
+        self::assertStringContainsString('What does "reluctant" mean in this context?', $cards[LearningCardType::CONTEXT_MEANING->value]->getFront());
         self::assertSame('hesitant or unwilling to speak', $cards[LearningCardType::CONTEXT_MEANING->value]->getBack());
 
         $crawler = $this->client->request('GET', '/vocabulary/'.$item->getId());
         $this->client->submit($crawler->selectButton('Generate learning cards')->form());
-        self::assertSame(4, $this->countRows('learning_card'));
+        self::assertSame(3, $this->countRows('learning_card'));
     }
 
-    public function testClozeGenerationUsesOriginalFormAndWordBoundaries(): void
+    public function testOrdinaryLearningCardGenerationDoesNotCreateAutomaticCloze(): void
     {
         $publication = $this->persistAnalyzedPublication('Cloze Source');
         $art = $this->persistVocabularyRow($publication, 'art', 'NOUN', 1);
@@ -645,11 +648,46 @@ final class PublicationUiTest extends WebTestCase
             $this->client->submit($crawler->selectButton('Generate learning cards')->form());
         }
 
-        self::assertSame(10, $this->countRows('learning_card'));
+        self::assertSame(9, $this->countRows('learning_card'));
         $clozeRows = $this->entityManager->getConnection()->fetchFirstColumn('SELECT cloze_sentence FROM learning_card WHERE type = :type ORDER BY cloze_sentence ASC', [
             'type' => LearningCardType::CLOZE->value,
         ]);
-        self::assertSame(['_____, he reached the door.'], $clozeRows);
+        self::assertSame([], $clozeRows);
+    }
+
+    public function testExistingClozeCardIsPreservedWhenGeneratingDefaultCards(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Existing Cloze Source');
+        $item = $this->persistVocabularyRow($publication, 'reluctant', 'ADJ', 1);
+        $this->persistOccurrence($publication, $item, 'reluctant', 'She was reluctant to speak.', 1);
+        $this->persistEnrichment($publication, $item, 'niechetny', 'hesitant or unwilling to speak', 'She was reluctant to speak.');
+        $this->entityManager->flush();
+
+        $publicationVocabulary = $this->entityManager->getRepository(PublicationVocabulary::class)->findOneBy([
+            'publication' => $publication,
+            'vocabularyItem' => $item,
+        ]);
+        self::assertInstanceOf(PublicationVocabulary::class, $publicationVocabulary);
+        self::assertNotNull($publicationVocabulary->getEnrichment());
+        $this->entityManager->persist(new LearningCard(
+            vocabularyItem: $item,
+            publicationVocabulary: $publicationVocabulary,
+            publicationVocabularyEnrichment: $publicationVocabulary->getEnrichment(),
+            type: LearningCardType::CLOZE,
+            front: 'She was _____ to speak.',
+            back: 'reluctant',
+            contextSentence: 'She was reluctant to speak.',
+            clozeSentence: 'She was _____ to speak.',
+        ));
+        $this->entityManager->flush();
+
+        $crawler = $this->client->request('GET', '/vocabulary/'.$item->getId());
+        $this->client->submit($crawler->selectButton('Generate learning cards')->form());
+
+        self::assertSame(4, $this->countRows('learning_card'));
+        self::assertSame(1, (int) $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM learning_card WHERE type = :type', [
+            'type' => LearningCardType::CLOZE->value,
+        ]));
     }
 
     public function testLearningCardsRemainContextSpecificForMultiplePublicationMeanings(): void
@@ -674,7 +712,7 @@ final class PublicationUiTest extends WebTestCase
             ]);
         }
 
-        self::assertSame(8, $this->countRows('learning_card'));
+        self::assertSame(6, $this->countRows('learning_card'));
         $rows = $this->entityManager->getConnection()->fetchAllAssociative('
             SELECT p.title, lc.back, lc.context_sentence
             FROM learning_card lc
@@ -714,9 +752,9 @@ final class PublicationUiTest extends WebTestCase
 
         self::assertResponseRedirects('/publications/'.$publication->getId());
         $this->client->followRedirect();
-        self::assertSelectorTextContains('body', '20 learning cards generated.');
+        self::assertSelectorTextContains('body', '15 learning cards generated.');
         self::assertSelectorTextContains('body', 'Skipped without enrichment: 1.');
-        self::assertSame(20, $this->countRows('learning_card'));
+        self::assertSame(15, $this->countRows('learning_card'));
     }
 
     public function testLearningCardsListFiltersPaginationAndActivation(): void
@@ -766,7 +804,7 @@ final class PublicationUiTest extends WebTestCase
             ]);
         }
 
-        $crawler = $this->client->request('GET', '/learning/study?start=1&publication='.$publication->getId().'&type=FORWARD&status=unknown');
+        $crawler = $this->client->request('GET', '/learning/study?start=1&publication='.$publication->getId().'&type=FORWARD&status=unknown&q=alpha');
         self::assertResponseIsSuccessful();
         self::assertSelectorTextContains('body', 'alpha');
         self::assertStringNotContainsString('translation alpha', (string) $this->client->getResponse()->getContent());
@@ -778,8 +816,38 @@ final class PublicationUiTest extends WebTestCase
         $crawler = $this->client->getCrawler();
         $this->client->submit($crawler->selectButton('Next')->form());
         $this->client->followRedirect();
-        self::assertSelectorTextContains('body', 'beta');
+        self::assertSelectorTextContains('body', 'Session complete');
         self::assertSame('UNKNOWN', $this->vocabularyStatus($first));
+    }
+
+    public function testReverseStudyCardDoesNotLeakTargetBeforeReveal(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Reverse source');
+        $item = $this->persistVocabularyRow($publication, 'reluctant', 'ADJ', 1);
+        $this->persistOccurrence($publication, $item, 'reluctant', 'She was reluctant to speak.', 1);
+        $this->persistEnrichment($publication, $item, 'niechetny', 'hesitant or unwilling to speak', 'She was reluctant to speak.');
+        $this->entityManager->flush();
+
+        $publicationVocabulary = $this->entityManager->getRepository(PublicationVocabulary::class)->findOneBy([
+            'publication' => $publication,
+            'vocabularyItem' => $item,
+        ]);
+        self::assertInstanceOf(PublicationVocabulary::class, $publicationVocabulary);
+        $this->client->request('POST', '/publication-vocabulary/'.$publicationVocabulary->getId().'/learning-cards/generate', [
+            '_token' => $this->learningCardsToken($publicationVocabulary),
+        ]);
+
+        $crawler = $this->client->request('GET', '/learning/study?start=1&publication='.$publication->getId().'&type=REVERSE&status=unknown');
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('body', 'Recall the target English word.');
+        self::assertSelectorTextContains('body', 'niechetny');
+        self::assertStringNotContainsString('reluctant', (string) $this->client->getResponse()->getContent());
+        self::assertStringNotContainsString('She was reluctant to speak.', (string) $this->client->getResponse()->getContent());
+
+        $this->client->submit($crawler->selectButton('Reveal answer')->form());
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', 'reluctant');
+        self::assertSelectorTextContains('body', 'She was reluctant to speak.');
     }
 
     public function testPublicationVocabularyCanBeExportedAsCsv(): void

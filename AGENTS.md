@@ -29,3 +29,9 @@ the API contract and must stay in sync with the code.
   publications.
 - Learning card generation must be idempotent. Creating cards for the same
   `PublicationVocabulary` and card type must not create duplicates.
+- Study scheduling and card generation are separate responsibilities.
+- Study queue ordering must avoid adjacent sibling cards for the same
+  `VocabularyItem` where feasible.
+- Ordinary vocabulary must not automatically generate open `CLOZE` cards solely
+  by replacing the target token.
+- Study UI must not leak the answer before Reveal.

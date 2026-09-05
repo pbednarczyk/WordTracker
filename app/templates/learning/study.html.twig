@@ -47,9 +47,17 @@
 
     {% if card %}
         {% set enrichment = card.publicationVocabularyEnrichment %}
+        {% set type = card.type.value %}
         <article class="study-card">
-            <span class="badge badge--cards">{{ card.type.value }}</span>
-            <p class="muted">Card {{ index + 1 }} of {{ total }}</p>
+            <span class="badge badge--cards">{{ type }}</span>
+            <p class="muted">Card {{ index + 1 }} of {{ total }} · {{ total - index - 1 }} remaining</p>
+            {% if type == 'FORWARD' %}
+                <p class="muted">What does this word mean?</p>
+            {% elseif type == 'REVERSE' %}
+                <p class="muted">Recall the target English word.</p>
+            {% elseif type == 'CLOZE' %}
+                <p class="muted">Recall the target expression for this cloze.</p>
+            {% endif %}
             <div class="study-card__front">{{ card.front }}</div>
 
             {% if revealed %}
@@ -58,13 +66,25 @@
                         <strong>Answer</strong>
                         {{ card.back }}
                     </div>
+                    <div>
+                        <strong>Target</strong>
+                        {{ card.vocabularyItem.lemma }}
+                    </div>
                     {% if enrichment %}
+                        <div>
+                            <strong>Translation</strong>
+                            {{ enrichment.translationPl }}
+                        </div>
                         <div>
                             <strong>Definition</strong>
                             {{ enrichment.definitionEn }}
                         </div>
                         <div>
-                            <strong>Context</strong>
+                            <strong>Meaning in context</strong>
+                            {{ enrichment.meaningInContext }}
+                        </div>
+                        <div>
+                            <strong>Source sentence</strong>
                             {{ card.contextSentence ?: enrichment.sourceSentence }}
                         </div>
                         <div>

@@ -112,6 +112,29 @@ final class LearningCardRepository extends ServiceEntityRepository
     }
 
     /**
+     * @return list<LearningCard>
+     */
+    public function findStudyCandidates(LearningCardQuery $query, int $limit = LearningCardQuery::STUDY_CANDIDATE_LIMIT): array
+    {
+        $query = new LearningCardQuery(
+            search: $query->search,
+            type: $query->type,
+            publicationId: $query->publicationId,
+            status: $query->status,
+            active: LearningCardQuery::ACTIVE_YES,
+            sort: LearningCardQuery::SORT_CREATED_AT,
+            direction: LearningCardQuery::DIRECTION_DESC,
+            page: 1,
+            perPage: $limit,
+        );
+
+        return $this->baseQueryBuilder($query)
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
      * @param list<int> $ids
      *
      * @return list<LearningCard>

@@ -26,6 +26,7 @@ final readonly class LearningCardQuery
     public const DEFAULT_PAGE = 1;
     public const DEFAULT_PER_PAGE = 50;
     public const STUDY_LIMIT = 100;
+    public const STUDY_CANDIDATE_LIMIT = 300;
 
     /**
      * @var list<int>

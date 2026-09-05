@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Application\SmartStudyQueueBuilder;
 use App\Entity\LearningCard;
 use App\Enum\LearningCardType;
 use App\Enum\VocabularyStatus;
@@ -28,6 +29,7 @@ final class LearningController extends AbstractController
         private readonly LearningCardRepository $learningCardRepository,
         private readonly PublicationRepository $publicationRepository,
         private readonly EntityManagerInterface $entityManager,
+        private readonly SmartStudyQueueBuilder $studyQueueBuilder,
     ) {
     }
 
@@ -84,7 +86,8 @@ final class LearningController extends AbstractController
     {
         $session = $request->getSession();
         if ($this->shouldStartStudy($request, $session)) {
-            $ids = $this->learningCardRepository->findStudyIds(LearningCardQuery::fromParameters($request->query->all()));
+            $candidates = $this->learningCardRepository->findStudyCandidates(LearningCardQuery::fromParameters($request->query->all()));
+            $ids = $this->studyQueueBuilder->build($candidates, LearningCardQuery::STUDY_LIMIT);
             $session->set(self::STUDY_IDS_KEY, $ids);
             $session->set(self::STUDY_INDEX_KEY, 0);
             $session->set(self::STUDY_REVEALED_KEY, false);
