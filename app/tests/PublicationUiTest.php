@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\Tests;
 
 use App\Entity\Publication;
+use App\Entity\LearningCard;
 use App\Entity\PublicationVocabulary;
 use App\Entity\PublicationVocabularyEnrichment;
 use App\Entity\VocabularyItem;
 use App\Entity\VocabularyOccurrence;
+use App\Enum\LearningCardType;
 use App\Enum\PublicationType;
 use App\Enum\VocabularyStatus;
 use App\Enrichment\VocabularyEnrichmentException;
@@ -595,6 +597,191 @@ final class PublicationUiTest extends WebTestCase
         self::assertSame(2, $this->countRows('publication_vocabulary_enrichment'));
     }
 
+    public function testGenerateLearningCardsCreatesFourTypesAndIsIdempotent(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Learning Cards Source');
+        $item = $this->persistVocabularyRow($publication, 'reluctant', 'ADJ', 1);
+        $this->persistOccurrence($publication, $item, 'reluctant', 'She was reluctant to speak.', 1);
+        $this->persistEnrichment($publication, $item, 'niechetny / wahajacy sie', 'hesitant or unwilling to speak', 'She was reluctant to speak.');
+        $this->entityManager->flush();
+
+        $crawler = $this->client->request('GET', '/vocabulary/'.$item->getId());
+        $this->client->submit($crawler->selectButton('Generate learning cards')->form());
+        self::assertResponseRedirects('/vocabulary/'.$item->getId());
+        self::assertSame(4, $this->countRows('learning_card'));
+
+        $cards = $this->learningCards();
+        self::assertSame('reluctant', $cards[LearningCardType::FORWARD->value]->getFront());
+        self::assertSame('niechetny / wahajacy sie', $cards[LearningCardType::FORWARD->value]->getBack());
+        self::assertSame('niechetny / wahajacy sie', $cards[LearningCardType::REVERSE->value]->getFront());
+        self::assertSame('reluctant', $cards[LearningCardType::REVERSE->value]->getBack());
+        self::assertSame('She was _____ to speak.', $cards[LearningCardType::CLOZE->value]->getClozeSentence());
+        self::assertStringContainsString('She was reluctant to speak.', (string) $cards[LearningCardType::CONTEXT_MEANING->value]->getContextSentence());
+        self::assertSame('hesitant or unwilling to speak', $cards[LearningCardType::CONTEXT_MEANING->value]->getBack());
+
+        $crawler = $this->client->request('GET', '/vocabulary/'.$item->getId());
+        $this->client->submit($crawler->selectButton('Generate learning cards')->form());
+        self::assertSame(4, $this->countRows('learning_card'));
+    }
+
+    public function testClozeGenerationUsesOriginalFormAndWordBoundaries(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Cloze Source');
+        $art = $this->persistVocabularyRow($publication, 'art', 'NOUN', 1);
+        $this->persistOccurrence($publication, $art, 'art', 'A partial failure followed.', 1);
+        $this->persistEnrichment($publication, $art, 'sztuka', 'creative work', 'A partial failure followed.');
+
+        $run = $this->persistVocabularyRow($publication, 'run', 'VERB', 1);
+        $this->persistOccurrence($publication, $run, 'Running', 'Running, he reached the door.', 2);
+        $this->persistEnrichment($publication, $run, 'biec', 'moving quickly', 'Running, he reached the door.');
+
+        $had = $this->persistVocabularyRow($publication, 'have', 'VERB', 1);
+        $this->persistOccurrence($publication, $had, 'had', 'He had had enough.', 3);
+        $this->persistEnrichment($publication, $had, 'miec', 'possessing or experiencing', 'He had had enough.');
+        $this->entityManager->flush();
+
+        foreach ([$art, $run, $had] as $item) {
+            $crawler = $this->client->request('GET', '/vocabulary/'.$item->getId());
+            $this->client->submit($crawler->selectButton('Generate learning cards')->form());
+        }
+
+        self::assertSame(10, $this->countRows('learning_card'));
+        $clozeRows = $this->entityManager->getConnection()->fetchFirstColumn('SELECT cloze_sentence FROM learning_card WHERE type = :type ORDER BY cloze_sentence ASC', [
+            'type' => LearningCardType::CLOZE->value,
+        ]);
+        self::assertSame(['_____, he reached the door.'], $clozeRows);
+    }
+
+    public function testLearningCardsRemainContextSpecificForMultiplePublicationMeanings(): void
+    {
+        $servicePublication = $this->persistAnalyzedPublication('Service billing');
+        $criminalPublication = $this->persistAnalyzedPublication('Criminal law');
+        $charge = new VocabularyItem('en', 'charge', 'NOUN');
+        $this->entityManager->persist($charge);
+        $this->entityManager->persist(new PublicationVocabulary($servicePublication, $charge, 1));
+        $this->entityManager->persist(new PublicationVocabulary($criminalPublication, $charge, 1));
+        $this->entityManager->flush();
+
+        $this->persistOccurrence($servicePublication, $charge, 'charge', 'The service charge was high.', 1);
+        $this->persistOccurrence($criminalPublication, $charge, 'charge', 'The criminal charge was serious.', 1);
+        $this->persistEnrichment($servicePublication, $charge, 'oplata', 'fee in this context', 'The service charge was high.');
+        $this->persistEnrichment($criminalPublication, $charge, 'zarzut', 'accusation in this context', 'The criminal charge was serious.');
+        $this->entityManager->flush();
+
+        foreach ($this->entityManager->getRepository(PublicationVocabulary::class)->findBy(['vocabularyItem' => $charge]) as $publicationVocabulary) {
+            $this->client->request('POST', '/publication-vocabulary/'.$publicationVocabulary->getId().'/learning-cards/generate', [
+                '_token' => $this->learningCardsToken($publicationVocabulary),
+            ]);
+        }
+
+        self::assertSame(8, $this->countRows('learning_card'));
+        $rows = $this->entityManager->getConnection()->fetchAllAssociative('
+            SELECT p.title, lc.back, lc.context_sentence
+            FROM learning_card lc
+            INNER JOIN publication_vocabulary pv ON pv.id = lc.publication_vocabulary_id
+            INNER JOIN publication p ON p.id = pv.publication_id
+            WHERE lc.type = :type
+            ORDER BY p.title ASC
+        ', ['type' => LearningCardType::FORWARD->value]);
+
+        self::assertSame('zarzut', $rows[0]['back']);
+        self::assertSame('The criminal charge was serious.', $rows[0]['context_sentence']);
+        self::assertSame('oplata', $rows[1]['back']);
+        self::assertSame('The service charge was high.', $rows[1]['context_sentence']);
+    }
+
+    public function testBulkLearningCardGenerationSkipsRowsWithoutEnrichment(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Bulk cards');
+        $items = [];
+        for ($index = 1; $index <= 5; ++$index) {
+            $item = $this->persistVocabularyRow($publication, sprintf('word%d', $index), 'NOUN', 1);
+            $this->persistOccurrence($publication, $item, sprintf('word%d', $index), sprintf('The word%d appeared.', $index), $index);
+            $this->persistEnrichment($publication, $item, sprintf('translation%d', $index), sprintf('meaning%d', $index), sprintf('The word%d appeared.', $index));
+            $items[] = $item;
+        }
+        $missing = $this->persistVocabularyRow($publication, 'missing', 'NOUN', 1);
+        $items[] = $missing;
+        $this->entityManager->flush();
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId());
+        $token = (string) $crawler->filter('form#bulk-status-form input[name="learningCardsToken"]')->attr('value');
+        $this->client->request('POST', '/publications/'.$publication->getId().'/learning-cards/generate-selected', [
+            'learningCardsToken' => $token,
+            'publicationId' => $publication->getId(),
+            'ids' => array_map(static fn (VocabularyItem $item): ?int => $item->getId(), $items),
+        ]);
+
+        self::assertResponseRedirects('/publications/'.$publication->getId());
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', '20 learning cards generated.');
+        self::assertSelectorTextContains('body', 'Skipped without enrichment: 1.');
+        self::assertSame(20, $this->countRows('learning_card'));
+    }
+
+    public function testLearningCardsListFiltersPaginationAndActivation(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Learning list');
+        for ($index = 1; $index <= 55; ++$index) {
+            $item = $this->persistVocabularyRow($publication, sprintf('term%03d', $index), 'NOUN', 1);
+            $this->persistOccurrence($publication, $item, sprintf('term%03d', $index), sprintf('The term%03d appeared.', $index), $index);
+            $this->persistEnrichment($publication, $item, sprintf('translation%03d', $index), sprintf('meaning%03d', $index), sprintf('The term%03d appeared.', $index));
+        }
+        $this->entityManager->flush();
+
+        foreach ($this->entityManager->getRepository(PublicationVocabulary::class)->findBy(['publication' => $publication]) as $publicationVocabulary) {
+            $this->client->request('POST', '/publication-vocabulary/'.$publicationVocabulary->getId().'/learning-cards/generate', [
+                '_token' => $this->learningCardsToken($publicationVocabulary),
+            ]);
+        }
+
+        $crawler = $this->client->request('GET', '/learning/cards?type=FORWARD&publication='.$publication->getId().'&status=unknown&q=term&sort=lemma&direction=asc&perPage=50');
+        self::assertResponseIsSuccessful();
+        self::assertSame(50, $crawler->filter('tbody tr')->count());
+        self::assertSelectorTextContains('body', 'Showing 1-50 of 55 cards');
+
+        $crawler = $this->client->request('GET', '/learning/cards?type=FORWARD&publication='.$publication->getId().'&status=unknown&q=term&sort=lemma&direction=asc&page=2&perPage=50');
+        self::assertSame(5, $crawler->filter('tbody tr')->count());
+
+        $this->client->submit($crawler->filter('tbody tr')->first()->selectButton('Deactivate')->form());
+        self::assertResponseRedirects();
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', 'Learning card deactivated.');
+    }
+
+    public function testStudyModeShowsFrontRevealBackAndNextWithoutChangingStatus(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Study source');
+        $first = $this->persistVocabularyRow($publication, 'alpha', 'NOUN', 1);
+        $second = $this->persistVocabularyRow($publication, 'beta', 'NOUN', 1);
+        foreach ([$first, $second] as $index => $item) {
+            $this->persistOccurrence($publication, $item, $item->getLemma(), sprintf('The %s appeared.', $item->getLemma()), $index + 1);
+            $this->persistEnrichment($publication, $item, 'translation '.$item->getLemma(), 'meaning '.$item->getLemma(), sprintf('The %s appeared.', $item->getLemma()));
+        }
+        $this->entityManager->flush();
+
+        foreach ($this->entityManager->getRepository(PublicationVocabulary::class)->findBy(['publication' => $publication]) as $publicationVocabulary) {
+            $this->client->request('POST', '/publication-vocabulary/'.$publicationVocabulary->getId().'/learning-cards/generate', [
+                '_token' => $this->learningCardsToken($publicationVocabulary),
+            ]);
+        }
+
+        $crawler = $this->client->request('GET', '/learning/study?start=1&publication='.$publication->getId().'&type=FORWARD&status=unknown');
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('body', 'alpha');
+        self::assertStringNotContainsString('translation alpha', (string) $this->client->getResponse()->getContent());
+
+        $this->client->submit($crawler->selectButton('Reveal answer')->form());
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', 'translation alpha');
+
+        $crawler = $this->client->getCrawler();
+        $this->client->submit($crawler->selectButton('Next')->form());
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', 'beta');
+        self::assertSame('UNKNOWN', $this->vocabularyStatus($first));
+    }
+
     public function testPublicationVocabularyCanBeExportedAsCsv(): void
     {
         $publication = $this->persistAnalyzedPublication('CSV Export');
@@ -800,7 +987,13 @@ final class PublicationUiTest extends WebTestCase
         $this->entityManager->persist(new VocabularyOccurrence($publication, $item, $originalForm, $sentence, $position));
     }
 
-    private function persistEnrichment(Publication $publication, VocabularyItem $item, string $translation): void
+    private function persistEnrichment(
+        Publication $publication,
+        VocabularyItem $item,
+        string $translation,
+        string $meaning = 'existing contextual meaning',
+        string $sourceSentence = 'He was reluctant to enter the cave.',
+    ): void
     {
         $publicationVocabulary = $this->entityManager->getRepository(PublicationVocabulary::class)->findOneBy([
             'publication' => $publication,
@@ -812,10 +1005,10 @@ final class PublicationUiTest extends WebTestCase
             publicationVocabulary: $publicationVocabulary,
             translationPl: $translation,
             definitionEn: 'not willing or eager to do something',
-            meaningInContext: 'existing contextual meaning',
+            meaningInContext: $meaning,
             simpleExample: 'She was reluctant to speak.',
             cefrLevel: 'B2',
-            sourceSentence: 'He was reluctant to enter the cave.',
+            sourceSentence: $sourceSentence,
             provider: 'test',
             model: 'fake',
             promptVersion: 'word-enrichment-v1',
@@ -854,12 +1047,36 @@ final class PublicationUiTest extends WebTestCase
             ->attr('value');
     }
 
+    private function learningCardsToken(PublicationVocabulary $publicationVocabulary): string
+    {
+        $crawler = $this->client->request('GET', '/vocabulary/'.$publicationVocabulary->getVocabularyItem()->getId());
+
+        return (string) $crawler
+            ->filter(sprintf('form[action="/publication-vocabulary/%d/learning-cards/generate"] input[name="_token"]', $publicationVocabulary->getId()))
+            ->attr('value');
+    }
+
     private function vocabularyStatus(VocabularyItem $item): string
     {
         return (string) $this->entityManager->getConnection()->fetchOne(
             'SELECT status FROM vocabulary_item WHERE id = :id',
             ['id' => $item->getId()],
         );
+    }
+
+    /**
+     * @return array<string, LearningCard>
+     */
+    private function learningCards(): array
+    {
+        $cards = $this->entityManager->getRepository(LearningCard::class)->findBy([], ['type' => 'ASC']);
+        $byType = [];
+        foreach ($cards as $card) {
+            self::assertInstanceOf(LearningCard::class, $card);
+            $byType[$card->getType()->value] = $card;
+        }
+
+        return $byType;
     }
 
     /**

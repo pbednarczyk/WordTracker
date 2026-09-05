@@ -297,6 +297,12 @@
                 margin-left: 6px;
             }
 
+            .badge--cards {
+                background: #eaf2ff;
+                color: var(--accent-strong);
+                margin-left: 6px;
+            }
+
             .enrichment-list {
                 display: grid;
                 gap: 16px;
@@ -315,6 +321,43 @@
                 justify-content: space-between;
                 gap: 16px;
                 margin-bottom: 14px;
+            }
+
+            .learning-card-actions {
+                display: flex;
+                align-items: center;
+                gap: 10px;
+                flex-wrap: wrap;
+                margin-bottom: 14px;
+            }
+
+            .study-card {
+                max-width: 760px;
+                margin: 0 auto;
+                padding: 28px;
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: 8px;
+            }
+
+            .study-card__front {
+                margin: 18px 0;
+                padding: 24px 0;
+                border-top: 1px solid var(--border);
+                border-bottom: 1px solid var(--border);
+                font-size: 28px;
+                font-weight: 750;
+                white-space: pre-wrap;
+            }
+
+            .study-card__answer {
+                display: grid;
+                gap: 12px;
+                margin: 18px 0;
+            }
+
+            .study-card__answer strong {
+                display: block;
             }
 
             .definition-list {
@@ -605,6 +648,7 @@
                     <nav class="nav" aria-label="Main navigation">
                         <a href="{{ path('app_home') }}">Home</a>
                         <a href="{{ path('publication_index') }}">Publications</a>
+                        <a href="{{ path('learning_cards') }}">Learning</a>
                         <a class="button button--primary" href="{{ path('publication_new') }}">Add publication</a>
                     </nav>
                 </div>

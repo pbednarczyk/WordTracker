@@ -123,6 +123,47 @@ provider to another compatible service without changing the domain model.
 AI enrichment is an educational aid. Generated translations, definitions, CEFR
 levels, and examples may require manual review or correction.
 
+## Learning Cards
+
+`LearningCard` is a study artifact generated from an enriched
+`PublicationVocabulary` row. It is separate from `VocabularyItem`: one global
+vocabulary item can have multiple contextual cards, including different cards
+for the same lemma in different publications.
+
+Supported card types:
+
+- `FORWARD`: lemma to Polish translation.
+- `REVERSE`: Polish translation to lemma.
+- `CLOZE`: source sentence with the concrete occurrence replaced by `_____`.
+- `CONTEXT_MEANING`: asks for the word meaning in its source sentence.
+
+Generate cards from a lemma detail page with `Generate learning cards`, or from
+a publication vocabulary table by selecting rows and using `Generate cards for
+selected`. Enrichment is required; rows without enrichment are skipped and
+reported. Generation is idempotent and creates only missing card types, so
+clicking the action again does not duplicate cards.
+
+Open the learning dashboard at:
+
+```text
+http://localhost:8080/learning/cards
+```
+
+The dashboard lists active cards by default and supports filtering by type,
+publication, vocabulary status, active state, and lemma search. Results are
+sorted and paginated server-side.
+
+Use `Study cards` to start the first manual study mode:
+
+```text
+front -> Reveal answer -> back -> Next
+```
+
+Study mode uses a temporary HTTP session snapshot of card IDs. It does not
+change `VocabularyItem.status`, does not persist review history, and is not SRS
+yet. Review ratings, review history, and FSRS scheduling are intentionally left
+for later stages.
+
 ## Local AI Enrichment With Ollama
 
 The Docker Compose stack runs Ollama as a separate service. The NLP container
@@ -471,6 +512,8 @@ Publication
    `-- PublicationVocabulary - VocabularyItem
           |
           `-- PublicationVocabularyEnrichment
+          |
+          `-- LearningCard
 ```
 
 - `Publication` stores a source material such as a book, article, comic, document, web page, or other text-bearing item.
@@ -480,11 +523,19 @@ Publication
 - `PublicationVocabularyEnrichment` stores AI-generated translation, definition,
   context meaning, simple example, optional CEFR level, source sentence, and
   provider metadata for a word in one specific publication.
+- `LearningCard` stores one contextual exercise generated from a
+  `PublicationVocabularyEnrichment`. Cards keep provenance links back to the
+  vocabulary item, publication vocabulary row, and enrichment used to create
+  them.
 
 `PublicationVocabulary` does not store status. Status is read from
 `VocabularyItem`, so status changes are cross-publication by design. Coverage is
 computed from current `VocabularyItem.status` and `PublicationVocabulary`
 occurrence counts; it is not cached on `Publication`.
+
+`LearningCard.isActive` controls whether a card appears in the default learning
+queue. Deactivating a card does not delete it and does not change the global
+vocabulary status.
 
 `VocabularyItem` identity is unique by:
 

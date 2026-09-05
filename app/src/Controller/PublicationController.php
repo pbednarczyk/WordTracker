@@ -6,6 +6,8 @@ namespace App\Controller;
 
 use App\Application\AnalyzePublicationHandler;
 use App\Application\EnrichPublicationVocabularyHandler;
+use App\Application\LearningCardGenerationResult;
+use App\Application\LearningCardGenerator;
 use App\Application\PublicationAnalysisException;
 use App\Application\PublicationVocabularyExporter;
 use App\Application\VocabularyStatusManager;
@@ -18,6 +20,7 @@ use App\Form\Model\PublicationInput;
 use App\Form\PublicationFormType;
 use App\Nlp\TextAnalyzerException;
 use App\Repository\PublicationRepository;
+use App\Repository\LearningCardRepository;
 use App\Repository\PublicationVocabularyQuery;
 use App\Repository\PublicationVocabularyRepository;
 use App\Repository\VocabularyOccurrenceRepository;
@@ -40,6 +43,8 @@ final class PublicationController extends AbstractController
         private readonly EntityManagerInterface $entityManager,
         private readonly AnalyzePublicationHandler $analyzePublication,
         private readonly EnrichPublicationVocabularyHandler $enrichPublicationVocabulary,
+        private readonly LearningCardGenerator $learningCardGenerator,
+        private readonly LearningCardRepository $learningCardRepository,
         private readonly VocabularyStatusManager $vocabularyStatusManager,
         private readonly PublicationVocabularyExporter $publicationVocabularyExporter,
         private readonly LoggerInterface $logger,
@@ -113,6 +118,7 @@ final class PublicationController extends AbstractController
         return $this->render('publication/show.html.twig', [
             'publication' => $publication,
             'vocabulary' => $paginatedVocabulary->items,
+            'cardCounts' => $this->learningCardRepository->countByPublicationVocabulary($paginatedVocabulary->items),
             'pagination' => $paginatedVocabulary,
             'summary' => $this->buildSummary($coverageStats),
             'filters' => $this->tableFilters($query),
@@ -195,10 +201,13 @@ final class PublicationController extends AbstractController
     #[Route('/vocabulary/{id}', name: 'vocabulary_show', methods: ['GET'])]
     public function showVocabulary(VocabularyItem $item): Response
     {
+        $publicationVocabulary = $this->publicationVocabularyRepository->findForVocabularyItemWithEnrichment($item);
+
         return $this->render('vocabulary/show.html.twig', [
             'item' => $item,
             'occurrences' => $this->vocabularyOccurrenceRepository->findForVocabularyItem($item),
-            'publicationVocabulary' => $this->publicationVocabularyRepository->findForVocabularyItemWithEnrichment($item),
+            'publicationVocabulary' => $publicationVocabulary,
+            'cardCounts' => $this->learningCardRepository->countByPublicationVocabulary($publicationVocabulary),
             'summary' => $this->vocabularyOccurrenceRepository->getSummaryForVocabularyItem($item),
         ]);
     }
@@ -270,6 +279,49 @@ final class PublicationController extends AbstractController
         if ($failures !== []) {
             $this->addFlash('error', 'Some enrichments failed: '.implode('; ', array_slice($failures, 0, 3)));
         }
+
+        return $this->redirectToPublicationFromRequest($request);
+    }
+
+    #[Route('/publication-vocabulary/{id}/learning-cards/generate', name: 'publication_vocabulary_learning_cards_generate', methods: ['POST'])]
+    public function generateLearningCards(PublicationVocabulary $publicationVocabulary, Request $request): RedirectResponse
+    {
+        if (!$this->isCsrfTokenValid($this->learningCardsCsrfTokenId($publicationVocabulary), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Invalid CSRF token.');
+        }
+
+        $result = $this->learningCardGenerator->generate($publicationVocabulary);
+        $this->addLearningCardGenerationFlash($result);
+
+        return $this->redirectToRoute('vocabulary_show', [
+            'id' => $publicationVocabulary->getVocabularyItem()->getId(),
+        ], Response::HTTP_SEE_OTHER);
+    }
+
+    #[Route('/publications/{id}/learning-cards/generate-selected', name: 'publication_learning_cards_generate_selected', methods: ['POST'])]
+    public function bulkGenerateLearningCards(Publication $publication, Request $request): RedirectResponse
+    {
+        if (!$this->isCsrfTokenValid($this->bulkLearningCardsCsrfTokenId((string) $publication->getId()), (string) $request->request->get('learningCardsToken'))) {
+            throw $this->createAccessDeniedException('Invalid CSRF token.');
+        }
+
+        $ids = array_map(static fn (mixed $id): int => filter_var($id, FILTER_VALIDATE_INT) ?: 0, $request->request->all('ids'));
+        $ids = array_values(array_filter($ids, static fn (int $id): bool => $id > 0));
+        if ($ids === []) {
+            $this->addFlash('error', 'No vocabulary items selected.');
+
+            return $this->redirectToPublicationFromRequest($request);
+        }
+
+        if (count($ids) > 100) {
+            $this->addFlash('error', 'Learning card generation is limited to 100 vocabulary items at a time.');
+
+            return $this->redirectToPublicationFromRequest($request);
+        }
+
+        $publicationVocabularyRows = $this->publicationVocabularyRepository->findForPublicationAndVocabularyItemIds($publication, $ids);
+        $result = $this->learningCardGenerator->generateMany($publicationVocabularyRows);
+        $this->addLearningCardGenerationFlash($result);
 
         return $this->redirectToPublicationFromRequest($request);
     }
@@ -354,9 +406,38 @@ final class PublicationController extends AbstractController
         return 'publication_vocabulary_enrichment_'.$publicationVocabulary->getId();
     }
 
+    private function learningCardsCsrfTokenId(PublicationVocabulary $publicationVocabulary): string
+    {
+        return 'publication_vocabulary_learning_cards_'.$publicationVocabulary->getId();
+    }
+
     private function bulkVocabularyEnrichmentCsrfTokenId(string $publicationId): string
     {
         return 'vocabulary_bulk_enrichment_'.$publicationId;
+    }
+
+    private function bulkLearningCardsCsrfTokenId(string $publicationId): string
+    {
+        return 'publication_learning_cards_'.$publicationId;
+    }
+
+    private function addLearningCardGenerationFlash(LearningCardGenerationResult $result): void
+    {
+        if ($result->created > 0) {
+            $this->addFlash('success', sprintf('%d learning card%s generated.', $result->created, $result->created === 1 ? '' : 's'));
+        }
+
+        if ($result->created === 0 && $result->existing > 0) {
+            $this->addFlash('success', 'Learning cards already exist.');
+        }
+
+        if ($result->skippedWithoutEnrichment > 0) {
+            $this->addFlash('error', sprintf('Skipped without enrichment: %d.', $result->skippedWithoutEnrichment));
+        }
+
+        if ($result->skippedCloze > 0) {
+            $this->addFlash('error', sprintf('Skipped cloze cards: %d.', $result->skippedCloze));
+        }
     }
 
     /**

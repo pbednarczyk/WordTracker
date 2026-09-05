@@ -1,0 +1,182 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Learning Cards - WordTracker{% endblock %}
+
+{% block body %}
+    <section class="page-header">
+        <div>
+            <h1>Learning Cards</h1>
+            <p class="muted">Contextual cards generated from enriched vocabulary.</p>
+        </div>
+        <a class="button button--primary" href="{{ path('learning_study', { start: 1 }) }}">Study cards</a>
+    </section>
+
+    <section>
+        <div class="toolbar toolbar--stacked">
+            <form class="filter-panel" method="get" action="{{ path('learning_cards') }}">
+                <input type="hidden" name="sort" value="{{ filters.sort }}">
+                <input type="hidden" name="direction" value="{{ filters.direction }}">
+                <input type="hidden" name="page" value="1">
+                <input type="hidden" name="perPage" value="{{ filters.perPage }}">
+
+                <label>
+                    Search
+                    <input type="search" name="q" value="{{ filters.q }}" placeholder="Search lemma">
+                </label>
+
+                <label>
+                    Type
+                    <select name="type">
+                        <option value="all" {{ filters.type == 'all' ? 'selected' : '' }}>All</option>
+                        {% for type in types %}
+                            <option value="{{ type.value }}" {{ filters.type == type.value ? 'selected' : '' }}>{{ type.value }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <label>
+                    Publication
+                    <select name="publication">
+                        <option value="all" {{ filters.publication == 'all' ? 'selected' : '' }}>All</option>
+                        {% for publication in publications %}
+                            <option value="{{ publication.id }}" {{ filters.publication == publication.id ? 'selected' : '' }}>{{ publication.title }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <label>
+                    Vocabulary status
+                    <select name="status">
+                        <option value="all" {{ filters.status == 'all' ? 'selected' : '' }}>All</option>
+                        {% for status in statuses %}
+                            <option value="{{ status.value|lower }}" {{ filters.status == status.value|lower ? 'selected' : '' }}>{{ status.value }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <label>
+                    Active
+                    <select name="active">
+                        {% for label, value in { 'Yes': 'yes', 'No': 'no', 'All': 'all' } %}
+                            <option value="{{ value }}" {{ filters.active == value ? 'selected' : '' }}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+
+                <button class="button" type="submit">Apply</button>
+                <a class="button" href="{{ path('learning_cards') }}">Clear filters</a>
+            </form>
+        </div>
+
+        <div class="table-meta">
+            <span>Showing {{ pagination.firstItem() }}-{{ pagination.lastItem() }} of {{ pagination.totalItems }} cards</span>
+            <form class="per-page" method="get" action="{{ path('learning_cards') }}">
+                <input type="hidden" name="q" value="{{ filters.q }}">
+                <input type="hidden" name="type" value="{{ filters.type }}">
+                <input type="hidden" name="publication" value="{{ filters.publication }}">
+                <input type="hidden" name="status" value="{{ filters.status }}">
+                <input type="hidden" name="active" value="{{ filters.active }}">
+                <input type="hidden" name="sort" value="{{ filters.sort }}">
+                <input type="hidden" name="direction" value="{{ filters.direction }}">
+                <input type="hidden" name="page" value="1">
+                <label>
+                    Per page
+                    <select name="perPage">
+                        {% for option in perPageOptions %}
+                            <option value="{{ option }}" {{ filters.perPage == option ? 'selected' : '' }}>{{ option }}</option>
+                        {% endfor %}
+                    </select>
+                </label>
+                <button class="button button--small" type="submit">Apply</button>
+            </form>
+        </div>
+
+        {% if cards is empty %}
+            <div class="empty">No learning cards match the current filters.</div>
+        {% else %}
+            <table>
+                <thead>
+                    <tr>
+                        {% for sort, label in { 'lemma': 'Word', 'type': 'Type', 'createdAt': 'Created at', 'publication': 'Publication' } %}
+                            {% set active = filters.sort == sort %}
+                            <th aria-sort="{{ active ? (filters.direction == 'asc' ? 'ascending' : 'descending') : 'none' }}">
+                                <a class="sort-link" href="{{ path('learning_cards', sortLinks[sort].params) }}" title="Sort by {{ label }}">
+                                    {{ label }}
+                                    {% if active %}
+                                        <span aria-hidden="true">{{ (filters.direction == 'asc' ? '&uarr;' : '&darr;')|raw }}</span>
+                                    {% endif %}
+                                </a>
+                            </th>
+                        {% endfor %}
+                        <th>Front</th>
+                        <th>Back</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for card in cards %}
+                        {% set publicationVocabulary = card.publicationVocabulary %}
+                        <tr>
+                            <td><a href="{{ path('vocabulary_show', { id: card.vocabularyItem.id }) }}">{{ card.vocabularyItem.lemma }}</a></td>
+                            <td><span class="badge badge--cards">{{ card.type.value }}</span></td>
+                            <td>{{ card.createdAt|date('Y-m-d H:i') }}</td>
+                            <td>
+                                {% if publicationVocabulary %}
+                                    <a href="{{ path('publication_show', { id: publicationVocabulary.publication.id }) }}">{{ publicationVocabulary.publication.title }}</a>
+                                {% else %}
+                                    <span class="muted">-</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ card.front|length > 90 ? card.front|slice(0, 90) ~ '...' : card.front }}</td>
+                            <td>{{ card.back|length > 90 ? card.back|slice(0, 90) ~ '...' : card.back }}</td>
+                            <td>
+                                <span class="badge {{ card.vocabularyItem.status.value == 'KNOWN' ? 'badge--known' : 'badge--unknown' }}">{{ card.vocabularyItem.status.value }}</span>
+                                <span class="badge {{ card.active ? 'badge--known' : 'badge--unknown' }}">{{ card.active ? 'ACTIVE' : 'INACTIVE' }}</span>
+                            </td>
+                            <td>
+                                <form method="post" action="{{ path(card.active ? 'learning_card_deactivate' : 'learning_card_activate', { id: card.id }) }}">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('learning_card_' ~ card.id) }}">
+                                    <input type="hidden" name="currentQuery" value="{{ filters.q }}">
+                                    <input type="hidden" name="currentType" value="{{ filters.type }}">
+                                    <input type="hidden" name="currentPublication" value="{{ filters.publication }}">
+                                    <input type="hidden" name="currentStatus" value="{{ filters.status }}">
+                                    <input type="hidden" name="currentActive" value="{{ filters.active }}">
+                                    <input type="hidden" name="currentSort" value="{{ filters.sort }}">
+                                    <input type="hidden" name="currentDirection" value="{{ filters.direction }}">
+                                    <input type="hidden" name="currentPage" value="{{ filters.page }}">
+                                    <input type="hidden" name="currentPerPage" value="{{ filters.perPage }}">
+                                    <button class="button button--small" type="submit">{{ card.active ? 'Deactivate' : 'Activate' }}</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            {% if pagination.totalPages > 1 %}
+                <nav class="pagination" aria-label="Learning cards pagination">
+                    {% set previousParams = filters|merge({ page: pagination.page - 1 }) %}
+                    {% set nextParams = filters|merge({ page: pagination.page + 1 }) %}
+                    <a class="page-link {{ pagination.page == 1 ? 'page-link--disabled' : '' }}"
+                       href="{{ pagination.page == 1 ? '#' : path('learning_cards', previousParams) }}"
+                       aria-disabled="{{ pagination.page == 1 ? 'true' : 'false' }}">Previous</a>
+
+                    {% for pageNumber in paginationPages %}
+                        {% if pageNumber is same as('gap-left') or pageNumber is same as('gap-right') %}
+                            <span class="page-gap">...</span>
+                        {% else %}
+                            <a class="page-link {{ pagination.page == pageNumber ? 'page-link--active' : '' }}"
+                               href="{{ path('learning_cards', filters|merge({ page: pageNumber })) }}"
+                               aria-current="{{ pagination.page == pageNumber ? 'page' : 'false' }}">{{ pageNumber }}</a>
+                        {% endif %}
+                    {% endfor %}
+
+                    <a class="page-link {{ pagination.page == pagination.totalPages ? 'page-link--disabled' : '' }}"
+                       href="{{ pagination.page == pagination.totalPages ? '#' : path('learning_cards', nextParams) }}"
+                       aria-disabled="{{ pagination.page == pagination.totalPages ? 'true' : 'false' }}">Next</a>
+                </nav>
+            {% endif %}
+        {% endif %}
+    </section>
+{% endblock %}

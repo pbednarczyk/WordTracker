@@ -4,28 +4,28 @@ declare(strict_types=1);
 
 namespace App\Repository;
 
+use App\Enum\LearningCardType;
 use App\Enum\VocabularyStatus;
-use App\Vocabulary\PartOfSpeech;
 
-final readonly class PublicationVocabularyQuery
+final readonly class LearningCardQuery
 {
-    public const ENRICHED_ALL = 'all';
-    public const ENRICHED_YES = 'yes';
-    public const ENRICHED_NO = 'no';
+    public const ACTIVE_ALL = 'all';
+    public const ACTIVE_YES = 'yes';
+    public const ACTIVE_NO = 'no';
 
     public const SORT_LEMMA = 'lemma';
-    public const SORT_POS = 'pos';
-    public const SORT_STATUS = 'status';
-    public const SORT_OCCURRENCES = 'occurrences';
-    public const SORT_ENRICHED = 'enriched';
+    public const SORT_TYPE = 'type';
+    public const SORT_CREATED_AT = 'createdAt';
+    public const SORT_PUBLICATION = 'publication';
 
     public const DIRECTION_ASC = 'asc';
     public const DIRECTION_DESC = 'desc';
 
-    public const DEFAULT_SORT = self::SORT_OCCURRENCES;
+    public const DEFAULT_SORT = self::SORT_CREATED_AT;
     public const DEFAULT_DIRECTION = self::DIRECTION_DESC;
     public const DEFAULT_PAGE = 1;
     public const DEFAULT_PER_PAGE = 50;
+    public const STUDY_LIMIT = 100;
 
     /**
      * @var list<int>
@@ -33,30 +33,14 @@ final readonly class PublicationVocabularyQuery
     public const PER_PAGE_OPTIONS = [25, 50, 100];
 
     /**
-     * @var list<string>
+     * @param positive-int|null $publicationId
      */
-    public const SORTS = [
-        self::SORT_LEMMA,
-        self::SORT_POS,
-        self::SORT_STATUS,
-        self::SORT_OCCURRENCES,
-        self::SORT_ENRICHED,
-    ];
-
-    /**
-     * @var list<string>
-     */
-    public const ENRICHED_VALUES = [
-        self::ENRICHED_ALL,
-        self::ENRICHED_YES,
-        self::ENRICHED_NO,
-    ];
-
     public function __construct(
         public string $search = '',
+        public ?LearningCardType $type = null,
+        public ?int $publicationId = null,
         public ?VocabularyStatus $status = null,
-        public string $enriched = self::ENRICHED_ALL,
-        public ?string $partOfSpeech = null,
+        public string $active = self::ACTIVE_YES,
         public string $sort = self::DEFAULT_SORT,
         public string $direction = self::DEFAULT_DIRECTION,
         public int $page = self::DEFAULT_PAGE,
@@ -69,8 +53,8 @@ final readonly class PublicationVocabularyQuery
      */
     public static function fromParameters(array $parameters): self
     {
-        $sort = self::stringValue($parameters['sort'] ?? null);
-        if (!in_array($sort, self::SORTS, true)) {
+        $sort = self::stringValue($parameters['sort'] ?? '');
+        if (!in_array($sort, [self::SORT_LEMMA, self::SORT_TYPE, self::SORT_CREATED_AT, self::SORT_PUBLICATION], true)) {
             $sort = self::DEFAULT_SORT;
         }
 
@@ -79,14 +63,9 @@ final readonly class PublicationVocabularyQuery
             $direction = self::defaultDirectionForSort($sort);
         }
 
-        $enriched = strtolower(self::stringValue($parameters['enriched'] ?? self::ENRICHED_ALL));
-        if (!in_array($enriched, self::ENRICHED_VALUES, true)) {
-            $enriched = self::ENRICHED_ALL;
-        }
-
-        $perPage = filter_var($parameters['perPage'] ?? self::DEFAULT_PER_PAGE, FILTER_VALIDATE_INT);
-        if (!in_array($perPage, self::PER_PAGE_OPTIONS, true)) {
-            $perPage = self::DEFAULT_PER_PAGE;
+        $active = strtolower(self::stringValue($parameters['active'] ?? self::ACTIVE_YES));
+        if (!in_array($active, [self::ACTIVE_ALL, self::ACTIVE_YES, self::ACTIVE_NO], true)) {
+            $active = self::ACTIVE_YES;
         }
 
         $page = filter_var($parameters['page'] ?? self::DEFAULT_PAGE, FILTER_VALIDATE_INT);
@@ -94,11 +73,19 @@ final readonly class PublicationVocabularyQuery
             $page = self::DEFAULT_PAGE;
         }
 
+        $perPage = filter_var($parameters['perPage'] ?? self::DEFAULT_PER_PAGE, FILTER_VALIDATE_INT);
+        if (!in_array($perPage, self::PER_PAGE_OPTIONS, true)) {
+            $perPage = self::DEFAULT_PER_PAGE;
+        }
+
+        $publicationId = filter_var($parameters['publication'] ?? null, FILTER_VALIDATE_INT);
+
         return new self(
             search: trim(self::stringValue($parameters['q'] ?? '')),
+            type: self::parseType(self::stringValue($parameters['type'] ?? '')),
+            publicationId: is_int($publicationId) && $publicationId > 0 ? $publicationId : null,
             status: self::parseStatus(self::stringValue($parameters['status'] ?? '')),
-            enriched: $enriched,
-            partOfSpeech: PartOfSpeech::normalize(self::stringValue($parameters['pos'] ?? '')),
+            active: $active,
             sort: $sort,
             direction: $direction,
             page: $page,
@@ -108,19 +95,17 @@ final readonly class PublicationVocabularyQuery
 
     public static function defaultDirectionForSort(string $sort): string
     {
-        return match ($sort) {
-            self::SORT_OCCURRENCES, self::SORT_ENRICHED => self::DIRECTION_DESC,
-            default => self::DIRECTION_ASC,
-        };
+        return $sort === self::SORT_CREATED_AT ? self::DIRECTION_DESC : self::DIRECTION_ASC;
     }
 
     public function withPage(int $page): self
     {
         return new self(
             search: $this->search,
+            type: $this->type,
+            publicationId: $this->publicationId,
             status: $this->status,
-            enriched: $this->enriched,
-            partOfSpeech: $this->partOfSpeech,
+            active: $this->active,
             sort: $this->sort,
             direction: $this->direction,
             page: max(1, $page),
@@ -135,9 +120,10 @@ final readonly class PublicationVocabularyQuery
     {
         $parameters = [
             'q' => $this->search,
+            'type' => $this->type?->value ?? 'all',
+            'publication' => $this->publicationId ?? 'all',
             'status' => strtolower($this->status?->value ?? 'all'),
-            'enriched' => $this->enriched,
-            'pos' => $this->partOfSpeech ?? 'all',
+            'active' => $this->active,
             'sort' => $this->sort,
             'direction' => $this->direction,
         ];
@@ -150,21 +136,14 @@ final readonly class PublicationVocabularyQuery
         return $parameters;
     }
 
-    /**
-     * @return array<string, string|int>
-     */
-    public function toHiddenFields(): array
+    private static function parseType(string $type): ?LearningCardType
     {
-        return [
-            'currentQuery' => $this->search,
-            'currentStatus' => strtolower($this->status?->value ?? 'all'),
-            'currentEnriched' => $this->enriched,
-            'currentPos' => $this->partOfSpeech ?? 'all',
-            'currentSort' => $this->sort,
-            'currentDirection' => $this->direction,
-            'currentPage' => $this->page,
-            'currentPerPage' => $this->perPage,
-        ];
+        $normalized = strtoupper(trim($type));
+        if ($normalized === '' || $normalized === 'ALL') {
+            return null;
+        }
+
+        return LearningCardType::tryFrom($normalized);
     }
 
     private static function parseStatus(string $status): ?VocabularyStatus

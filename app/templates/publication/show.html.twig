@@ -151,6 +151,7 @@
                 <form id="bulk-status-form" method="post" action="{{ path('vocabulary_bulk_status_update') }}">
                     <input type="hidden" name="_token" value="{{ csrf_token('vocabulary_bulk_status_' ~ publication.id) }}">
                     <input type="hidden" name="enrichmentToken" value="{{ csrf_token('vocabulary_bulk_enrichment_' ~ publication.id) }}">
+                    <input type="hidden" name="learningCardsToken" value="{{ csrf_token('publication_learning_cards_' ~ publication.id) }}">
                     <input type="hidden" name="publicationId" value="{{ publication.id }}">
                     {% for name, value in hiddenTableState %}
                         <input type="hidden" name="{{ name }}" value="{{ value }}">
@@ -165,6 +166,7 @@
                     <button class="button" type="submit" name="status" value="KNOWN" form="bulk-status-form">Mark selected as KNOWN</button>
                     <button class="button" type="submit" name="status" value="UNKNOWN" form="bulk-status-form">Mark selected as UNKNOWN</button>
                     <button class="button" type="submit" form="bulk-status-form" formaction="{{ path('vocabulary_bulk_enrich') }}">Enrich selected</button>
+                    <button class="button" type="submit" form="bulk-status-form" formaction="{{ path('publication_learning_cards_generate_selected', { id: publication.id }) }}">Generate cards for selected</button>
                 </div>
 
                 <table>
@@ -205,6 +207,10 @@
                                         <span class="badge badge--enriched">ENRICHED</span>
                                     {% else %}
                                         <span class="muted">No</span>
+                                    {% endif %}
+                                    {% set rowCardCount = row.id ? (cardCounts[row.id] ?? 0) : 0 %}
+                                    {% if rowCardCount > 0 %}
+                                        <span class="badge badge--cards">CARDS {{ rowCardCount }}</span>
                                     {% endif %}
                                 </td>
                                 <td>

@@ -1,0 +1,95 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}Study - WordTracker{% endblock %}
+
+{% block body %}
+    <section class="page-header">
+        <div>
+            <h1>Study</h1>
+            <p class="muted">{{ selectedCount }} cards selected</p>
+        </div>
+        <a class="button" href="{{ path('learning_cards') }}">Learning Cards</a>
+    </section>
+
+    <section class="panel">
+        <form class="filter-panel" method="get" action="{{ path('learning_study') }}">
+            <input type="hidden" name="start" value="1">
+            <label>
+                Type
+                <select name="type">
+                    <option value="all">All</option>
+                    {% for type in types %}
+                        <option value="{{ type.value }}">{{ type.value }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>
+                Publication
+                <select name="publication">
+                    <option value="all">All</option>
+                    {% for publication in publications %}
+                        <option value="{{ publication.id }}">{{ publication.title }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label>
+                Vocabulary status
+                <select name="status">
+                    <option value="all">All</option>
+                    {% for status in statuses %}
+                        <option value="{{ status.value|lower }}">{{ status.value }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <button class="button" type="submit">Start</button>
+        </form>
+    </section>
+
+    {% if card %}
+        {% set enrichment = card.publicationVocabularyEnrichment %}
+        <article class="study-card">
+            <span class="badge badge--cards">{{ card.type.value }}</span>
+            <p class="muted">Card {{ index + 1 }} of {{ total }}</p>
+            <div class="study-card__front">{{ card.front }}</div>
+
+            {% if revealed %}
+                <div class="study-card__answer">
+                    <div>
+                        <strong>Answer</strong>
+                        {{ card.back }}
+                    </div>
+                    {% if enrichment %}
+                        <div>
+                            <strong>Definition</strong>
+                            {{ enrichment.definitionEn }}
+                        </div>
+                        <div>
+                            <strong>Context</strong>
+                            {{ card.contextSentence ?: enrichment.sourceSentence }}
+                        </div>
+                        <div>
+                            <strong>Simple example</strong>
+                            {{ enrichment.simpleExample }}
+                        </div>
+                    {% endif %}
+                </div>
+                <form method="post" action="{{ path('learning_study_next') }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token('learning_study') }}">
+                    <button class="button button--primary" type="submit">Next</button>
+                </form>
+            {% else %}
+                <form method="post" action="{{ path('learning_study_reveal') }}">
+                    <input type="hidden" name="_token" value="{{ csrf_token('learning_study') }}">
+                    <button class="button button--primary" type="submit">Reveal answer</button>
+                </form>
+            {% endif %}
+        </article>
+    {% elseif selectedCount > 0 %}
+        <div class="empty">
+            Session complete.
+            Cards reviewed: {{ total }}.
+        </div>
+    {% else %}
+        <div class="empty">No active learning cards match the current filters.</div>
+    {% endif %}
+{% endblock %}

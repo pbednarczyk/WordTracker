@@ -20,3 +20,12 @@ the API contract and must stay in sync with the code.
 - Any destructive reset helper must verify the active database name before
   `TRUNCATE`, `DROP`, or reset-style `DELETE FROM`.
 - Never change test `DATABASE_URL` to the development database for convenience.
+
+## Learning cards
+
+- `VocabularyItem` is not a `LearningCard`.
+- One `VocabularyItem` may have multiple contextual `LearningCard` records,
+  especially when the same lemma appears with different meanings in different
+  publications.
+- Learning card generation must be idempotent. Creating cards for the same
+  `PublicationVocabulary` and card type must not create duplicates.
