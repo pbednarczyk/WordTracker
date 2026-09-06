@@ -29,6 +29,7 @@ final class VocabularyOccurrenceRepository extends ServiceEntityRepository
         return $this->createQueryBuilder('vo')
             ->addSelect('p')
             ->innerJoin('vo.publication', 'p')
+            ->innerJoin(PublicationVocabulary::class, 'pv', 'WITH', 'pv.publication = vo.publication AND pv.vocabularyItem = vo.vocabularyItem AND pv.deletedAt IS NULL')
             ->andWhere('vo.vocabularyItem = :item')
             ->setParameter('item', $item)
             ->orderBy('p.createdAt', 'DESC')
@@ -40,6 +41,10 @@ final class VocabularyOccurrenceRepository extends ServiceEntityRepository
 
     public function findRepresentativeForPublicationVocabulary(PublicationVocabulary $publicationVocabulary): ?VocabularyOccurrence
     {
+        if ($publicationVocabulary->isDeleted()) {
+            return null;
+        }
+
         return $this->createQueryBuilder('vo')
             ->andWhere('vo.publication = :publication')
             ->andWhere('vo.vocabularyItem = :item')
@@ -61,6 +66,7 @@ final class VocabularyOccurrenceRepository extends ServiceEntityRepository
             ->select('COUNT(vo.id) AS totalOccurrences')
             ->addSelect('COUNT(DISTINCT p.id) AS publicationCount')
             ->innerJoin('vo.publication', 'p')
+            ->innerJoin(PublicationVocabulary::class, 'pv', 'WITH', 'pv.publication = vo.publication AND pv.vocabularyItem = vo.vocabularyItem AND pv.deletedAt IS NULL')
             ->andWhere('vo.vocabularyItem = :item')
             ->setParameter('item', $item)
             ->getQuery()

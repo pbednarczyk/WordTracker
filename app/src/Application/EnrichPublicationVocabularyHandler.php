@@ -25,6 +25,10 @@ final readonly class EnrichPublicationVocabularyHandler
 
     public function __invoke(PublicationVocabulary $publicationVocabulary): PublicationVocabularyEnrichment
     {
+        if ($publicationVocabulary->isDeleted()) {
+            throw new VocabularyEnrichmentException('Cannot generate enrichment for removed publication vocabulary.');
+        }
+
         $publication = $publicationVocabulary->getPublication();
         $item = $publicationVocabulary->getVocabularyItem();
         if ($publication->getLanguage() !== 'en' || $item->getLanguage() !== 'en') {

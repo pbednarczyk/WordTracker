@@ -7,6 +7,7 @@ namespace App\Tests;
 use App\Application\AnalyzePublicationHandler;
 use App\Application\PublicationAnalysisException;
 use App\Entity\Publication;
+use App\Entity\PublicationVocabulary;
 use App\Entity\PublicationVocabularyEnrichment;
 use App\Entity\VocabularyItem;
 use App\Enum\PublicationType;
@@ -180,6 +181,36 @@ final class AnalyzePublicationHandlerTest extends KernelTestCase
         self::assertSame('niechetny', $this->entityManager->getConnection()->fetchOne('SELECT translation_pl FROM publication_vocabulary_enrichment'));
     }
 
+    public function testReanalysisDoesNotResurrectSoftDeletedPublicationVocabulary(): void
+    {
+        $publication = $this->persistPublication('A billionaire met the hero.');
+        $analyzer = new MutableAnalyzer([
+            $this->token('billionaire', 'billionaire', 'NOUN', 2),
+        ]);
+        $handler = $this->handler($analyzer);
+
+        $handler($publication);
+        $publicationVocabulary = $this->publicationVocabularyRepository->findForPublicationOrdered($publication)[0];
+        $publicationVocabulary->softDelete(new \DateTimeImmutable('2026-09-06 12:00:00'));
+        $this->entityManager->flush();
+
+        $analyzer->tokens = [
+            $this->token('billionaire', 'billionaire', 'NOUN', 2),
+            $this->token('hero', 'hero', 'NOUN', 22),
+        ];
+
+        $result = $handler($publication);
+        $this->entityManager->clear();
+
+        self::assertSame(1, $result->vocabularyOccurrences);
+        self::assertSame(1, $result->uniqueVocabularyItems);
+        self::assertSame(1, $this->countPublicationVocabularyRows($publication->getId(), 'billionaire'));
+        self::assertSame(0, $this->countActivePublicationVocabularyRows($publication->getId(), 'billionaire'));
+        self::assertSame(1, $this->countActivePublicationVocabularyRows($publication->getId(), 'hero'));
+        self::assertSame(2, $this->countRows('publication_vocabulary'));
+        self::assertSame(1, $this->countRows('vocabulary_occurrence'));
+    }
+
     public function testNlpFailureDoesNotPersistAnalysis(): void
     {
         $publication = $this->persistPublication('Nothing should be stored.');
@@ -308,6 +339,38 @@ final class AnalyzePublicationHandlerTest extends KernelTestCase
         );
 
         return $occurrences === false ? null : (int) $occurrences;
+    }
+
+    private function countPublicationVocabularyRows(?int $publicationId, string $lemma): int
+    {
+        return (int) $this->entityManager->getConnection()->fetchOne(
+            <<<'SQL'
+                SELECT COUNT(*)
+                FROM publication_vocabulary pv
+                INNER JOIN vocabulary_item vi ON vi.id = pv.vocabulary_item_id
+                WHERE pv.publication_id = :publication_id AND vi.lemma = :lemma
+                SQL,
+            [
+                'publication_id' => $publicationId,
+                'lemma' => $lemma,
+            ],
+        );
+    }
+
+    private function countActivePublicationVocabularyRows(?int $publicationId, string $lemma): int
+    {
+        return (int) $this->entityManager->getConnection()->fetchOne(
+            <<<'SQL'
+                SELECT COUNT(*)
+                FROM publication_vocabulary pv
+                INNER JOIN vocabulary_item vi ON vi.id = pv.vocabulary_item_id
+                WHERE pv.publication_id = :publication_id AND vi.lemma = :lemma AND pv.deleted_at IS NULL
+                SQL,
+            [
+                'publication_id' => $publicationId,
+                'lemma' => $lemma,
+            ],
+        );
     }
 
 }

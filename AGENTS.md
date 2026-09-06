@@ -49,3 +49,9 @@ the API contract and must stay in sync with the code.
   records what happened.
 - Smart study queue ordering and future due/scheduling logic are separate
   concerns. Do not implement FSRS scheduling inside `SmartStudyQueueBuilder`.
+- Manual vocabulary exclusion is publication-specific. `PublicationVocabulary`
+  uses soft deletion through `deleted_at`; do not delete the global
+  `VocabularyItem` as part of contextual exclusion.
+- Soft-deleted publication vocabulary must stay hidden from normal
+  UI/statistics/export/enrichment/study candidates and must not be resurrected
+  by re-analysis.

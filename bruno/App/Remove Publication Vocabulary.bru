@@ -1,0 +1,21 @@
+meta {
+  name: Remove Publication Vocabulary
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{appBaseUrl}}/publication-vocabulary/1/remove
+  body: form-urlencoded
+  auth: none
+}
+
+body:form-urlencoded {
+  _token: paste-csrf-token-from-rendered-form
+}
+
+docs {
+  Soft-deletes one publication-specific vocabulary context.
+
+  This is a CSRF-protected Symfony web form endpoint. Open the publication or vocabulary page first, copy the hidden _token from the matching remove form, and replace the placeholder before sending.
+}

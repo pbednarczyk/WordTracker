@@ -81,6 +81,21 @@ final class PublicationVocabularyRepository extends ServiceEntityRepository
     /**
      * @return list<PublicationVocabulary>
      */
+    public function findForPublicationIncludingDeleted(Publication $publication): array
+    {
+        return $this->createQueryBuilder('pv')
+            ->addSelect('vi')
+            ->innerJoin('pv.vocabularyItem', 'vi')
+            ->andWhere('pv.publication = :publication')
+            ->setParameter('publication', $publication)
+            ->orderBy('pv.id', 'ASC')
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * @return list<PublicationVocabulary>
+     */
     public function findForVocabularyItemWithEnrichment(VocabularyItem $item): array
     {
         return $this->createQueryBuilder('pv')
@@ -88,6 +103,7 @@ final class PublicationVocabularyRepository extends ServiceEntityRepository
             ->innerJoin('pv.publication', 'p')
             ->leftJoin('pv.enrichment', 'e')
             ->andWhere('pv.vocabularyItem = :item')
+            ->andWhere('pv.deletedAt IS NULL')
             ->setParameter('item', $item)
             ->orderBy('p.createdAt', 'DESC')
             ->addOrderBy('p.id', 'DESC')
@@ -113,12 +129,24 @@ final class PublicationVocabularyRepository extends ServiceEntityRepository
             ->leftJoin('pv.enrichment', 'e')
             ->andWhere('pv.publication = :publication')
             ->andWhere('vi.id IN (:itemIds)')
+            ->andWhere('pv.deletedAt IS NULL')
             ->setParameter('publication', $publication)
             ->setParameter('itemIds', $itemIds)
             ->orderBy('pv.occurrences', 'DESC')
             ->addOrderBy('vi.lemma', 'ASC')
             ->getQuery()
             ->getResult();
+    }
+
+    public function countActiveForVocabularyItem(VocabularyItem $item): int
+    {
+        return (int) $this->createQueryBuilder('pv')
+            ->select('COUNT(pv.id)')
+            ->andWhere('pv.vocabularyItem = :item')
+            ->andWhere('pv.deletedAt IS NULL')
+            ->setParameter('item', $item)
+            ->getQuery()
+            ->getSingleScalarResult();
     }
 
     /**
@@ -142,6 +170,7 @@ final class PublicationVocabularyRepository extends ServiceEntityRepository
             ->addSelect('COALESCE(SUM(CASE WHEN vi.status = :known THEN pv.occurrences ELSE 0 END), 0) AS occurrencesKnown')
             ->addSelect('COALESCE(SUM(CASE WHEN vi.status = :unknown THEN pv.occurrences ELSE 0 END), 0) AS occurrencesUnknown')
             ->andWhere('pv.publication = :publication')
+            ->andWhere('pv.deletedAt IS NULL')
             ->setParameter('publication', $publication)
             ->setParameter('known', VocabularyStatus::KNOWN)
             ->setParameter('unknown', VocabularyStatus::UNKNOWN)
@@ -179,6 +208,7 @@ final class PublicationVocabularyRepository extends ServiceEntityRepository
             ->addSelect('COALESCE(SUM(CASE WHEN vi.status = :known THEN pv.occurrences ELSE 0 END), 0) AS occurrencesKnown')
             ->addSelect('COALESCE(SUM(CASE WHEN vi.status = :unknown THEN pv.occurrences ELSE 0 END), 0) AS occurrencesUnknown')
             ->andWhere('pv.publication IN (:publications)')
+            ->andWhere('pv.deletedAt IS NULL')
             ->groupBy('pv.publication')
             ->setParameter('publications', $publications)
             ->setParameter('known', VocabularyStatus::KNOWN)
@@ -231,6 +261,7 @@ final class PublicationVocabularyRepository extends ServiceEntityRepository
             ->select('COUNT(DISTINCT pv.id)')
             ->innerJoin('pv.vocabularyItem', 'vi')
             ->andWhere('pv.publication = :publication')
+            ->andWhere('pv.deletedAt IS NULL')
             ->setParameter('publication', $publication);
 
         if ($query->enriched !== PublicationVocabularyQuery::ENRICHED_ALL) {
@@ -249,6 +280,7 @@ final class PublicationVocabularyRepository extends ServiceEntityRepository
             ->innerJoin('pv.vocabularyItem', 'vi')
             ->leftJoin('pv.enrichment', 'e')
             ->andWhere('pv.publication = :publication')
+            ->andWhere('pv.deletedAt IS NULL')
             ->setParameter('publication', $publication);
 
         $this->applyFilters($queryBuilder, $query);

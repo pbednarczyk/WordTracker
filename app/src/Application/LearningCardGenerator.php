@@ -21,6 +21,10 @@ final readonly class LearningCardGenerator
 
     public function generate(PublicationVocabulary $publicationVocabulary): LearningCardGenerationResult
     {
+        if ($publicationVocabulary->isDeleted()) {
+            return new LearningCardGenerationResult(created: 0, existing: 0, skippedWithoutEnrichment: 1, skippedCloze: 0);
+        }
+
         $enrichment = $publicationVocabulary->getEnrichment();
         if ($enrichment === null) {
             return new LearningCardGenerationResult(created: 0, existing: 0, skippedWithoutEnrichment: 1, skippedCloze: 0);

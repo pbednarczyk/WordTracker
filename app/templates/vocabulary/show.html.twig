@@ -53,13 +53,35 @@
                                 </strong>
                                 <div class="muted">{{ row.occurrences }} occurrence{{ row.occurrences == 1 ? '' : 's' }}</div>
                             </div>
-                            <form method="post" action="{{ path('publication_vocabulary_enrich', { id: row.id }) }}">
-                                <input type="hidden" name="_token" value="{{ csrf_token('publication_vocabulary_enrichment_' ~ row.id) }}">
-                                <button class="button button--small" type="submit">
-                                    {{ enrichment ? 'Regenerate' : 'Generate enrichment' }}
+                            <div class="actions">
+                                <form method="post" action="{{ path('publication_vocabulary_enrich', { id: row.id }) }}">
+                                    <input type="hidden" name="_token" value="{{ csrf_token('publication_vocabulary_enrichment_' ~ row.id) }}">
+                                    <button class="button button--small" type="submit">
+                                        {{ enrichment ? 'Regenerate' : 'Generate enrichment' }}
+                                    </button>
+                                </form>
+                                <button class="button button--small button--danger" type="button" data-dialog-open="remove-publication-vocabulary-{{ row.id }}">
+                                    <span class="button__icon" aria-hidden="true">&#128465;</span>Remove from publication
                                 </button>
-                            </form>
+                            </div>
                         </div>
+                        <dialog class="dialog" id="remove-publication-vocabulary-{{ row.id }}">
+                            <div class="dialog__body">
+                                <h2>Remove from publication?</h2>
+                                <p>
+                                    Remove "{{ item.lemma }}" from "{{ row.publication.title }}"? This hides this contextual vocabulary row from coverage, exports, enrichment, and study candidates. The global vocabulary item and review history are preserved.
+                                </p>
+                                <div class="dialog__actions">
+                                    <form method="dialog">
+                                        <button class="button" type="submit">Cancel</button>
+                                    </form>
+                                    <form method="post" action="{{ path('publication_vocabulary_remove', { id: row.id }) }}">
+                                        <input type="hidden" name="_token" value="{{ csrf_token('publication_vocabulary_remove_' ~ row.id) }}">
+                                        <button class="button button--danger" type="submit">Remove</button>
+                                    </form>
+                                </div>
+                            </div>
+                        </dialog>
 
                         {% if enrichment %}
                             {% set cardCount = row.id ? (cardCounts[row.id] ?? 0) : 0 %}

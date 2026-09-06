@@ -68,6 +68,11 @@ final readonly class AnalyzePublicationHandler
                     continue;
                 }
 
+                $identity = $this->identity($analysis->language, $token->lemma, $token->pos);
+                if (($existingPublicationVocabulary[$identity] ?? null)?->isDeleted()) {
+                    continue;
+                }
+
                 $vocabularyItem = $this->resolveVocabularyItem($analysis->language, $token, $itemsByIdentity);
                 $this->entityManager->persist(new VocabularyOccurrence(
                     publication: $publication,
@@ -77,7 +82,6 @@ final readonly class AnalyzePublicationHandler
                     position: $token->position,
                 ));
 
-                $identity = $this->identity($analysis->language, $token->lemma, $token->pos);
                 $aggregation[$identity] = [
                     'item' => $vocabularyItem,
                     'occurrences' => ($aggregation[$identity]['occurrences'] ?? 0) + 1,
@@ -99,7 +103,7 @@ final readonly class AnalyzePublicationHandler
             }
 
             foreach ($existingPublicationVocabulary as $identity => $publicationVocabulary) {
-                if (!isset($aggregation[$identity])) {
+                if (!$publicationVocabulary->isDeleted() && !isset($aggregation[$identity])) {
                     $this->entityManager->remove($publicationVocabulary);
                 }
             }
@@ -139,7 +143,7 @@ final readonly class AnalyzePublicationHandler
      */
     private function findExistingPublicationVocabulary(Publication $publication): array
     {
-        $rows = $this->publicationVocabularyRepository->findForPublicationOrdered($publication);
+        $rows = $this->publicationVocabularyRepository->findForPublicationIncludingDeleted($publication);
         $publicationVocabulary = [];
 
         foreach ($rows as $row) {

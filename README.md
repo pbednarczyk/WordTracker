@@ -580,8 +580,11 @@ Current requests:
 - `NLP / Health`: `GET {{nlpBaseUrl}}/health`
 - `NLP / Analyze`: `POST {{nlpBaseUrl}}/analyze`
 - `NLP / Enrich Vocabulary`: `POST {{nlpBaseUrl}}/enrich`
+- `App / Remove Publication Vocabulary`: `POST {{appBaseUrl}}/publication-vocabulary/:id/remove`
 
-The requests include assertions for the current response contract.
+The NLP requests include assertions for the current response contract. The app
+remove request documents the CSRF-protected web form endpoint; obtain `_token`
+from the rendered publication vocabulary row before sending it manually.
 
 ## Data Model
 
@@ -602,7 +605,12 @@ Publication
 - `Publication` stores a source material such as a book, article, comic, document, web page, or other text-bearing item.
 - `VocabularyItem` stores the global vocabulary item. It is the source of truth and is not deleted when a publication is deleted.
 - `VocabularyOccurrence` stores one concrete occurrence of a word in one publication.
-- `PublicationVocabulary` stores the aggregate relation between one publication and one vocabulary item, including the occurrence count.
+- `PublicationVocabulary` stores the aggregate relation between one publication
+  and one vocabulary item, including the occurrence count. Manual vocabulary
+  exclusion is publication-specific: `PublicationVocabulary.deletedAt` soft
+  deletes that contextual row, normal UI/statistics/export/study queries ignore
+  it, and re-analysis must not resurrect it as an active row. The global
+  `VocabularyItem` is never deleted as part of contextual exclusion.
 - `PublicationVocabularyEnrichment` stores AI-generated translation, definition,
   context meaning, simple example, optional CEFR level, source sentence, and
   provider metadata for a word in one specific publication.

@@ -11,6 +11,7 @@ use App\Application\LearningCardGenerator;
 use App\Application\PublicationAnalysisException;
 use App\Application\PublicationVocabularyExporter;
 use App\Application\VocabularyStatusManager;
+use App\Clock\ClockInterface;
 use App\Entity\Publication;
 use App\Entity\PublicationVocabulary;
 use App\Entity\VocabularyItem;
@@ -47,6 +48,7 @@ final class PublicationController extends AbstractController
         private readonly LearningCardRepository $learningCardRepository,
         private readonly VocabularyStatusManager $vocabularyStatusManager,
         private readonly PublicationVocabularyExporter $publicationVocabularyExporter,
+        private readonly ClockInterface $clock,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -231,6 +233,35 @@ final class PublicationController extends AbstractController
         ], Response::HTTP_SEE_OTHER);
     }
 
+    #[Route('/publication-vocabulary/{id}/remove', name: 'publication_vocabulary_remove', methods: ['POST'])]
+    public function removePublicationVocabulary(PublicationVocabulary $publicationVocabulary, Request $request): RedirectResponse
+    {
+        if (!$this->isCsrfTokenValid($this->publicationVocabularyRemoveCsrfTokenId($publicationVocabulary), (string) $request->request->get('_token'))) {
+            throw $this->createAccessDeniedException('Invalid CSRF token.');
+        }
+
+        $publication = $publicationVocabulary->getPublication();
+        $item = $publicationVocabulary->getVocabularyItem();
+
+        if (!$publicationVocabulary->isDeleted()) {
+            $publicationVocabulary->softDelete($this->clock->now());
+            $this->entityManager->flush();
+            $this->addFlash('success', sprintf('"%s" removed from this publication.', $item->getLemma()));
+        } else {
+            $this->addFlash('success', sprintf('"%s" is already removed from this publication.', $item->getLemma()));
+        }
+
+        if ($this->publicationVocabularyRepository->countActiveForVocabularyItem($item) > 0) {
+            return $this->redirectToRoute('vocabulary_show', [
+                'id' => $item->getId(),
+            ], Response::HTTP_SEE_OTHER);
+        }
+
+        return $this->redirectToRoute('publication_show', [
+            'id' => $publication->getId(),
+        ], Response::HTTP_SEE_OTHER);
+    }
+
     #[Route('/vocabulary/bulk-enrichment', name: 'vocabulary_bulk_enrich', methods: ['POST'])]
     public function bulkEnrichVocabulary(Request $request): RedirectResponse
     {
@@ -409,6 +440,11 @@ final class PublicationController extends AbstractController
     private function learningCardsCsrfTokenId(PublicationVocabulary $publicationVocabulary): string
     {
         return 'publication_vocabulary_learning_cards_'.$publicationVocabulary->getId();
+    }
+
+    private function publicationVocabularyRemoveCsrfTokenId(PublicationVocabulary $publicationVocabulary): string
+    {
+        return 'publication_vocabulary_remove_'.$publicationVocabulary->getId();
     }
 
     private function bulkVocabularyEnrichmentCsrfTokenId(string $publicationId): string

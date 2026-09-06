@@ -10,6 +10,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Entity(repositoryClass: PublicationVocabularyRepository::class)]
 #[ORM\UniqueConstraint(name: 'uniq_publication_vocabulary_identity', columns: ['publication_id', 'vocabulary_item_id'])]
 #[ORM\Index(name: 'idx_publication_vocabulary_publication', columns: ['publication_id'])]
+#[ORM\Index(name: 'idx_publication_vocabulary_publication_deleted', columns: ['publication_id', 'deleted_at'])]
 #[ORM\Index(name: 'idx_publication_vocabulary_vocabulary_item', columns: ['vocabulary_item_id'])]
 class PublicationVocabulary
 {
@@ -31,6 +32,9 @@ class PublicationVocabulary
 
     #[ORM\OneToOne(mappedBy: 'publicationVocabulary', targetEntity: PublicationVocabularyEnrichment::class, cascade: ['persist'], orphanRemoval: true)]
     private ?PublicationVocabularyEnrichment $enrichment = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?\DateTimeImmutable $deletedAt = null;
 
     public function __construct(
         Publication $publication,
@@ -83,5 +87,22 @@ class PublicationVocabulary
     public function setEnrichment(?PublicationVocabularyEnrichment $enrichment): void
     {
         $this->enrichment = $enrichment;
+    }
+
+    public function getDeletedAt(): ?\DateTimeImmutable
+    {
+        return $this->deletedAt;
+    }
+
+    public function isDeleted(): bool
+    {
+        return $this->deletedAt !== null;
+    }
+
+    public function softDelete(\DateTimeImmutable $deletedAt): void
+    {
+        if ($this->deletedAt === null) {
+            $this->deletedAt = $deletedAt;
+        }
     }
 }

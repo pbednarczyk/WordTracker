@@ -158,7 +158,9 @@ final class LearningCardRepository extends ServiceEntityRepository
     {
         return (int) $this->createQueryBuilder('lc')
             ->select('COUNT(lc.id)')
+            ->leftJoin('lc.publicationVocabulary', 'pv')
             ->andWhere('lc.isActive = true')
+            ->andWhere('pv.id IS NULL OR pv.deletedAt IS NULL')
             ->andWhere('lc.fsrsState IS NOT NULL')
             ->andWhere('lc.nextReviewAt <= :now')
             ->setParameter('now', $now)
@@ -170,7 +172,9 @@ final class LearningCardRepository extends ServiceEntityRepository
     {
         return (int) $this->createQueryBuilder('lc')
             ->select('COUNT(lc.id)')
+            ->leftJoin('lc.publicationVocabulary', 'pv')
             ->andWhere('lc.isActive = true')
+            ->andWhere('pv.id IS NULL OR pv.deletedAt IS NULL')
             ->andWhere('lc.fsrsState IS NULL')
             ->getQuery()
             ->getSingleScalarResult();
@@ -247,6 +251,7 @@ final class LearningCardRepository extends ServiceEntityRepository
             ->leftJoin('lc.publicationVocabularyEnrichment', 'e')
             ->andWhere('lc.id IN (:ids)')
             ->andWhere('lc.isActive = true')
+            ->andWhere('pv.id IS NULL OR pv.deletedAt IS NULL')
             ->setParameter('ids', $ids)
             ->getQuery()
             ->getResult();
@@ -344,6 +349,8 @@ final class LearningCardRepository extends ServiceEntityRepository
         } elseif ($query->active === LearningCardQuery::ACTIVE_NO) {
             $queryBuilder->andWhere('lc.isActive = false');
         }
+
+        $queryBuilder->andWhere('pv.id IS NULL OR pv.deletedAt IS NULL');
     }
 
     private function applySorting(QueryBuilder $queryBuilder, LearningCardQuery $query): void

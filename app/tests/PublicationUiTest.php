@@ -317,6 +317,119 @@ final class PublicationUiTest extends WebTestCase
         self::assertSame('UNKNOWN', $this->vocabularyStatus($item));
     }
 
+    public function testRemovePublicationVocabularyRejectsInvalidCsrf(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Invalid remove CSRF');
+        $item = $this->persistVocabularyRow($publication, 'reluctant', 'ADJ', 2);
+        $publicationVocabulary = $this->publicationVocabularyFor($publication, $item);
+
+        $this->client->request('POST', '/publication-vocabulary/'.$publicationVocabulary->getId().'/remove', [
+            '_token' => 'invalid',
+        ]);
+
+        self::assertResponseStatusCodeSame(403);
+        self::assertNull($this->entityManager->getConnection()->fetchOne(
+            'SELECT deleted_at FROM publication_vocabulary WHERE id = :id',
+            ['id' => $publicationVocabulary->getId()],
+        ));
+    }
+
+    public function testRemovePublicationVocabularySoftDeletesContextAndHidesItFromUserFacingViews(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Soft delete source');
+        $item = $this->persistVocabularyRow($publication, 'reluctant', 'ADJ', 2);
+        $this->persistOccurrence($publication, $item, 'reluctant', 'The reluctant hero waited.', 4);
+        $this->persistEnrichment($publication, $item, 'niechetny', 'hesitant in this context', 'The reluctant hero waited.');
+        $this->entityManager->flush();
+        $publicationVocabulary = $this->publicationVocabularyFor($publication, $item);
+
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId());
+        $token = (string) $crawler
+            ->filter(sprintf('form[action="/publication-vocabulary/%d/remove"] input[name="_token"]', $publicationVocabulary->getId()))
+            ->attr('value');
+
+        $this->client->request('POST', '/publication-vocabulary/'.$publicationVocabulary->getId().'/remove', [
+            '_token' => $token,
+        ]);
+
+        self::assertResponseRedirects('/publications/'.$publication->getId());
+        self::assertSame(1, $this->countRows('publication_vocabulary'));
+        self::assertSame(1, $this->countRows('vocabulary_item'));
+        self::assertSame(1, $this->countRows('vocabulary_occurrence'));
+        self::assertSame(1, $this->countRows('publication_vocabulary_enrichment'));
+        self::assertNotNull($this->entityManager->getConnection()->fetchOne(
+            'SELECT deleted_at FROM publication_vocabulary WHERE id = :id',
+            ['id' => $publicationVocabulary->getId()],
+        ));
+
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', 'No vocabulary items match the current filters.');
+
+        $this->client->request('GET', '/vocabulary/'.$item->getId());
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('h1', 'reluctant');
+        self::assertSelectorTextContains('body', 'No publication-specific vocabulary entries available.');
+        self::assertSelectorTextContains('body', 'No occurrence history available.');
+        self::assertStringNotContainsString('niechetny', (string) $this->client->getResponse()->getContent());
+
+        $this->client->request('GET', '/publications/'.$publication->getId().'/vocabulary/export.csv');
+        self::assertResponseIsSuccessful();
+        self::assertStringNotContainsString('reluctant', (string) $this->client->getResponse()->getContent());
+    }
+
+    public function testRemovingContextDoesNotAffectTheSameVocabularyItemInAnotherPublication(): void
+    {
+        $firstPublication = $this->persistAnalyzedPublication('First context');
+        $secondPublication = $this->persistAnalyzedPublication('Second context');
+        $item = $this->persistVocabularyRow($firstPublication, 'charge', 'NOUN', 1);
+        $this->entityManager->persist(new PublicationVocabulary($secondPublication, $item, 1));
+        $this->entityManager->flush();
+        $removedContext = $this->publicationVocabularyFor($firstPublication, $item);
+
+        $crawler = $this->client->request('GET', '/vocabulary/'.$item->getId());
+        $token = (string) $crawler
+            ->filter(sprintf('form[action="/publication-vocabulary/%d/remove"] input[name="_token"]', $removedContext->getId()))
+            ->attr('value');
+        $this->client->request('POST', '/publication-vocabulary/'.$removedContext->getId().'/remove', [
+            '_token' => $token,
+        ]);
+
+        self::assertResponseRedirects('/vocabulary/'.$item->getId());
+        $this->client->followRedirect();
+        self::assertStringNotContainsString('First context', (string) $this->client->getResponse()->getContent());
+        self::assertSelectorTextContains('body', 'Second context');
+    }
+
+    public function testRemovedContextPreservesLearningHistoryButExcludesCardsFromStudy(): void
+    {
+        $publication = $this->publicationWithGeneratedForwardCards(['alpha', 'beta']);
+        $alpha = $this->entityManager->getRepository(VocabularyItem::class)->findOneBy(['lemma' => 'alpha']);
+        $beta = $this->entityManager->getRepository(VocabularyItem::class)->findOneBy(['lemma' => 'beta']);
+        self::assertInstanceOf(VocabularyItem::class, $alpha);
+        self::assertInstanceOf(VocabularyItem::class, $beta);
+        $this->recordReviewForWord($publication, 'alpha', 'Good');
+        $betaContext = $this->publicationVocabularyFor($publication, $beta);
+
+        $crawler = $this->client->request('GET', '/vocabulary/'.$beta->getId());
+        $token = (string) $crawler
+            ->filter(sprintf('form[action="/publication-vocabulary/%d/remove"] input[name="_token"]', $betaContext->getId()))
+            ->attr('value');
+        $this->client->request('POST', '/publication-vocabulary/'.$betaContext->getId().'/remove', [
+            '_token' => $token,
+        ]);
+
+        self::assertSame(6, $this->countRows('learning_card'));
+        self::assertSame(1, $this->countRows('learning_review'));
+
+        $this->client->request('GET', '/learning/cards?publication='.$publication->getId().'&q=beta');
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('body', 'No learning cards match the current filters.');
+
+        $this->client->request('GET', '/learning/study?start=1&publication='.$publication->getId().'&q=beta');
+        self::assertResponseIsSuccessful();
+        self::assertSelectorTextContains('body', 'No due or new learning cards match the current filters.');
+    }
+
     public function testVocabularyStatusFiltersAndSearchUseDatabaseResults(): void
     {
         $publication = $this->persistAnalyzedPublication('Filtered vocabulary');
@@ -1334,6 +1447,17 @@ final class PublicationUiTest extends WebTestCase
             model: 'fake',
             promptVersion: 'word-enrichment-v1',
         ));
+    }
+
+    private function publicationVocabularyFor(Publication $publication, VocabularyItem $item): PublicationVocabulary
+    {
+        $publicationVocabulary = $this->entityManager->getRepository(PublicationVocabulary::class)->findOneBy([
+            'publication' => $publication,
+            'vocabularyItem' => $item,
+        ]);
+        self::assertInstanceOf(PublicationVocabulary::class, $publicationVocabulary);
+
+        return $publicationVocabulary;
     }
 
     private function enrichmentResult(string $translation, string $meaning): VocabularyEnrichmentResult
