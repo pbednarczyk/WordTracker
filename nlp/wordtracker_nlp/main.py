@@ -10,7 +10,7 @@ from wordtracker_nlp.ollama import OllamaEnrichment, PROMPT_VERSION, OllamaClien
 analyzer = TextAnalyzer.from_model("en_core_web_sm")
 app = FastAPI(title="WordTracker NLP")
 logger = logging.getLogger(__name__)
-MAX_REPAIR_ATTEMPTS = 2
+MAX_REPAIR_ATTEMPTS = 1
 
 
 def get_ollama_client() -> OllamaClient:
@@ -143,4 +143,27 @@ def validate_or_repair_enrichment(
         )
         return current_enrichment
 
-    raise last_error
+    fallback_enrichment = enrichment.model_copy(update={"simple_example": request.context_sentence})
+    try:
+        validate_enrichment(request, fallback_enrichment, analyzer)
+    except EnrichmentValidationError as fallback_error:
+        last_error = fallback_error
+        issue = fallback_error.issues[0]
+        logger.warning(
+            "enrichment validation failed",
+            extra={
+                "field": issue.field,
+                "code": issue.code,
+                "phase": "context_sentence_fallback",
+                "target": request.lemma,
+            },
+        )
+        raise last_error
+
+    logger.info(
+        "enrichment simple_example fell back to source context sentence",
+        extra={
+            "field": "simple_example",
+        },
+    )
+    return fallback_enrichment

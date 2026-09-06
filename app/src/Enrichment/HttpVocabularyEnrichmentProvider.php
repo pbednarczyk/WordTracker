@@ -33,6 +33,11 @@ final readonly class HttpVocabularyEnrichmentProvider implements VocabularyEnric
 
             $statusCode = $response->getStatusCode();
             if ($statusCode < 200 || $statusCode >= 300) {
+                $detail = $this->errorDetail($response->getContent(false));
+                if ($detail !== null) {
+                    throw new VocabularyEnrichmentException('AI enrichment failed: '.$detail);
+                }
+
                 throw new VocabularyEnrichmentException(sprintf('AI enrichment provider returned HTTP %d.', $statusCode));
             }
 
@@ -46,6 +51,21 @@ final readonly class HttpVocabularyEnrichmentProvider implements VocabularyEnric
         }
 
         return $this->mapPayload($payload);
+    }
+
+    private function errorDetail(string $content): ?string
+    {
+        $payload = json_decode($content, true);
+        if (!is_array($payload) || !array_key_exists('detail', $payload) || !is_string($payload['detail'])) {
+            return null;
+        }
+
+        $detail = trim(preg_replace('/\s+/', ' ', $payload['detail']) ?? '');
+        if ($detail === '') {
+            return null;
+        }
+
+        return mb_substr($detail, 0, 300);
     }
 
     /**

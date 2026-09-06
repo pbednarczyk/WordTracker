@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests;
 
 use App\Enrichment\HttpVocabularyEnrichmentProvider;
+use App\Enrichment\VocabularyEnrichmentException;
 use App\Enrichment\VocabularyEnrichmentRequest;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\HttpClient\MockHttpClient;
@@ -53,5 +54,33 @@ final class HttpVocabularyEnrichmentProviderTest extends TestCase
         self::assertIsArray($sentPayload);
         self::assertArrayNotHasKey('model', $sentPayload);
         self::assertSame('qwen3:14b', $result->model);
+    }
+
+    public function testSymfonySurfacesFastApiDetailForNonSuccessResponse(): void
+    {
+        $client = new MockHttpClient(new MockResponse(json_encode([
+            'detail' => 'Ollama timed out.',
+        ], JSON_THROW_ON_ERROR), [
+            'http_code' => 502,
+            'response_headers' => ['content-type: application/json'],
+        ]));
+
+        $provider = new HttpVocabularyEnrichmentProvider(
+            httpClient: $client,
+            vocabularyEnrichmentBaseUrl: 'http://nlp:8000',
+            vocabularyEnrichmentTimeout: 120.0,
+        );
+
+        $this->expectException(VocabularyEnrichmentException::class);
+        $this->expectExceptionMessage('AI enrichment failed: Ollama timed out.');
+
+        $provider->enrich(new VocabularyEnrichmentRequest(
+            lemma: 'willingness',
+            partOfSpeech: 'NOUN',
+            originalForm: 'willingness',
+            contextSentence: 'His willingness to grow impressed everyone.',
+            sourceLanguage: 'en',
+            targetLanguage: 'pl',
+        ));
     }
 }

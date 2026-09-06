@@ -94,6 +94,8 @@ def test_enrich_uses_ollama_dependency_and_returns_metadata() -> None:
         "prompt_version": "word-enrichment-v4",
     }
     assert fake.requests[0].lemma == "willingness"
+    assert len(fake.requests) == 1
+    assert len(fake.repair_requests) == 0
 
 
 def test_enrich_rejects_unsupported_language_pair() -> None:
@@ -210,6 +212,7 @@ def test_enrich_repairs_simple_example_without_regenerating_other_fields() -> No
     assert response.json()["cefr_level"] == "B1"
     assert len(fake.requests) == 1
     assert len(fake.repair_requests) == 1
+    assert len(fake.requests) + len(fake.repair_requests) == 2
     validation_issue = fake.repair_requests[0]["validation_issue"]
     assert isinstance(validation_issue, ValidationIssue)
     assert validation_issue.to_dict() == {
@@ -293,47 +296,37 @@ def test_enrich_skips_repair_when_first_attempt_is_valid() -> None:
     assert len(fake.repair_requests) == 0
 
 
-def test_enrich_second_repair_can_succeed() -> None:
+def test_enrich_falls_back_to_context_sentence_when_repair_is_invalid() -> None:
     fake = FakeOllamaClient(
         result=alter_enrichment("The accident changed his life."),
-        repair_results=[
-            "The accident transformed his life.",
-            "The accident altered his life.",
-        ],
+        repair_results=["The accident transformed his life."],
     )
     app.dependency_overrides[get_ollama_client] = lambda: fake
 
     response = TestClient(app).post("/enrich", json=alter_request().model_dump())
 
     assert response.status_code == 200
-    assert response.json()["simple_example"] == "The accident altered his life."
+    assert response.json()["simple_example"] == "We may alter the route if the bridge is closed."
     assert len(fake.requests) == 1
-    assert len(fake.repair_requests) == 2
-    first_repair_enrichment = fake.repair_requests[0]["enrichment"]
-    second_repair_enrichment = fake.repair_requests[1]["enrichment"]
-    assert isinstance(first_repair_enrichment, OllamaEnrichment)
-    assert isinstance(second_repair_enrichment, OllamaEnrichment)
-    assert first_repair_enrichment.simple_example == "The accident changed his life."
-    assert second_repair_enrichment.simple_example == "The accident transformed his life."
+    assert len(fake.repair_requests) == 1
+    repair_enrichment = fake.repair_requests[0]["enrichment"]
+    assert isinstance(repair_enrichment, OllamaEnrichment)
+    assert repair_enrichment.simple_example == "The accident changed his life."
 
 
-def test_enrich_fails_after_repair_attempts_are_exhausted() -> None:
+def test_enrich_does_not_save_invalid_ai_example_when_falling_back_to_context_sentence() -> None:
     fake = FakeOllamaClient(
         result=alter_enrichment("The accident changed his life."),
-        repair_results=[
-            "The accident transformed his life.",
-            "The accident changed everything.",
-        ],
+        repair_results=["The accident changed everything."],
     )
     app.dependency_overrides[get_ollama_client] = lambda: fake
 
     response = TestClient(app).post("/enrich", json=alter_request().model_dump())
 
-    assert response.status_code == 502
-    assert "field=simple_example code=TARGET_NOT_PRESENT" in response.json()["detail"]
-    assert "2 repair attempts" in response.json()["detail"]
+    assert response.status_code == 200
+    assert response.json()["simple_example"] == "We may alter the route if the bridge is closed."
     assert len(fake.requests) == 1
-    assert len(fake.repair_requests) == 2
+    assert len(fake.repair_requests) == 1
 
 
 def test_transport_failure_does_not_attempt_semantic_repair() -> None:
