@@ -134,6 +134,99 @@ final class LearningCardRepository extends ServiceEntityRepository
             ->getResult();
     }
 
+    public function countActiveDue(LearningCardQuery $query, \DateTimeImmutable $now): int
+    {
+        $queryBuilder = $this->baseSchedulingQueryBuilder($query)
+            ->select('COUNT(DISTINCT lc.id)')
+            ->andWhere('lc.fsrsState IS NOT NULL')
+            ->andWhere('lc.nextReviewAt <= :now')
+            ->setParameter('now', $now);
+
+        return (int) $queryBuilder->getQuery()->getSingleScalarResult();
+    }
+
+    public function countActiveNew(LearningCardQuery $query): int
+    {
+        $queryBuilder = $this->baseSchedulingQueryBuilder($query)
+            ->select('COUNT(DISTINCT lc.id)')
+            ->andWhere('lc.fsrsState IS NULL');
+
+        return (int) $queryBuilder->getQuery()->getSingleScalarResult();
+    }
+
+    public function countAllActiveDue(\DateTimeImmutable $now): int
+    {
+        return (int) $this->createQueryBuilder('lc')
+            ->select('COUNT(lc.id)')
+            ->andWhere('lc.isActive = true')
+            ->andWhere('lc.fsrsState IS NOT NULL')
+            ->andWhere('lc.nextReviewAt <= :now')
+            ->setParameter('now', $now)
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    public function countAllActiveNew(): int
+    {
+        return (int) $this->createQueryBuilder('lc')
+            ->select('COUNT(lc.id)')
+            ->andWhere('lc.isActive = true')
+            ->andWhere('lc.fsrsState IS NULL')
+            ->getQuery()
+            ->getSingleScalarResult();
+    }
+
+    public function nextReviewAt(LearningCardQuery $query, \DateTimeImmutable $now): ?\DateTimeImmutable
+    {
+        $value = $this->baseSchedulingQueryBuilder($query)
+            ->select('MIN(lc.nextReviewAt)')
+            ->andWhere('lc.fsrsState IS NOT NULL')
+            ->andWhere('lc.nextReviewAt > :now')
+            ->setParameter('now', $now)
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        return $this->dateTimeOrNull($value);
+    }
+
+    /**
+     * @return list<LearningCard>
+     */
+    public function findDueReviewCandidates(LearningCardQuery $query, \DateTimeImmutable $now, int $limit): array
+    {
+        if ($limit <= 0) {
+            return [];
+        }
+
+        return $this->baseSchedulingQueryBuilder($query)
+            ->andWhere('lc.fsrsState IS NOT NULL')
+            ->andWhere('lc.nextReviewAt <= :now')
+            ->setParameter('now', $now)
+            ->orderBy('lc.nextReviewAt', 'ASC')
+            ->addOrderBy('lc.id', 'ASC')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
+    }
+
+    /**
+     * @return list<LearningCard>
+     */
+    public function findNewStudyCandidates(LearningCardQuery $query, int $limit): array
+    {
+        if ($limit <= 0) {
+            return [];
+        }
+
+        return $this->baseSchedulingQueryBuilder($query)
+            ->andWhere('lc.fsrsState IS NULL')
+            ->orderBy('lc.createdAt', 'ASC')
+            ->addOrderBy('lc.id', 'ASC')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
+    }
+
     /**
      * @param list<int> $ids
      *
@@ -194,6 +287,32 @@ final class LearningCardRepository extends ServiceEntityRepository
         return $queryBuilder;
     }
 
+    private function baseSchedulingQueryBuilder(LearningCardQuery $query): QueryBuilder
+    {
+        $query = new LearningCardQuery(
+            search: $query->search,
+            type: $query->type,
+            publicationId: $query->publicationId,
+            status: $query->status,
+            active: LearningCardQuery::ACTIVE_YES,
+            sort: $query->sort,
+            direction: $query->direction,
+            page: 1,
+            perPage: $query->perPage,
+        );
+
+        $queryBuilder = $this->createQueryBuilder('lc')
+            ->addSelect('vi', 'pv', 'p', 'e')
+            ->innerJoin('lc.vocabularyItem', 'vi')
+            ->leftJoin('lc.publicationVocabulary', 'pv')
+            ->leftJoin('pv.publication', 'p')
+            ->leftJoin('lc.publicationVocabularyEnrichment', 'e');
+
+        $this->applyFilters($queryBuilder, $query);
+
+        return $queryBuilder;
+    }
+
     private function applyFilters(QueryBuilder $queryBuilder, LearningCardQuery $query): void
     {
         if ($query->search !== '') {
@@ -240,5 +359,26 @@ final class LearningCardRepository extends ServiceEntityRepository
             ->orderBy($sortExpression, strtoupper($query->direction))
             ->addOrderBy('vi.lemma', 'ASC')
             ->addOrderBy('lc.id', 'ASC');
+    }
+
+    private function dateTimeOrNull(mixed $value): ?\DateTimeImmutable
+    {
+        if ($value instanceof \DateTimeImmutable) {
+            return $value;
+        }
+
+        if ($value instanceof \DateTimeInterface) {
+            return \DateTimeImmutable::createFromInterface($value);
+        }
+
+        if (is_string($value) && $value !== '') {
+            try {
+                return new \DateTimeImmutable($value);
+            } catch (\Exception) {
+                return null;
+            }
+        }
+
+        return null;
     }
 }

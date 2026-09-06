@@ -8,6 +8,7 @@ use App\Clock\ClockInterface;
 use App\Entity\LearningCard;
 use App\Entity\LearningReview;
 use App\Enum\ReviewRating;
+use App\Fsrs\FsrsSchedulerInterface;
 use App\Repository\LearningReviewRepository;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
@@ -20,6 +21,7 @@ final readonly class RecordLearningReviewHandler
         private EntityManagerInterface $entityManager,
         private LearningReviewRepository $learningReviewRepository,
         private ClockInterface $clock,
+        private FsrsSchedulerInterface $fsrsScheduler,
     ) {
     }
 
@@ -36,19 +38,38 @@ final readonly class RecordLearningReviewHandler
         }
 
         $now = $this->clock->now();
-        $review = new LearningReview(
-            learningCard: $card,
-            rating: $rating,
-            reviewedAt: $now,
-            responseTimeMs: $this->responseTimeMs($startedAt, $now),
-            studySessionId: $studySessionId,
-            studyPosition: $studyPosition,
-        );
-
-        $this->entityManager->persist($review);
+        $review = null;
 
         try {
-            $this->entityManager->flush();
+            $review = $this->entityManager->wrapInTransaction(function () use ($card, $rating, $studySessionId, $studyPosition, $startedAt, $now): LearningReview {
+                $review = new LearningReview(
+                    learningCard: $card,
+                    rating: $rating,
+                    reviewedAt: $now,
+                    responseTimeMs: $this->responseTimeMs($startedAt, $now),
+                    studySessionId: $studySessionId,
+                    studyPosition: $studyPosition,
+                );
+
+                $schedule = $this->fsrsScheduler->scheduleReview($card, $rating, $now);
+                $card->applyFsrsState(
+                    state: $schedule->state,
+                    stability: $schedule->stability,
+                    difficulty: $schedule->difficulty,
+                    elapsedDays: $schedule->elapsedDays,
+                    scheduledDays: $schedule->scheduledDays,
+                    reps: $schedule->reps,
+                    lapses: $schedule->lapses,
+                    step: $schedule->step,
+                    nextReviewAt: $schedule->nextReviewAt,
+                    lastReviewAt: $schedule->lastReviewAt,
+                );
+
+                $this->entityManager->persist($review);
+                $this->entityManager->flush();
+
+                return $review;
+            });
         } catch (UniqueConstraintViolationException $exception) {
             $this->entityManager->clear();
             $existing = $this->learningReviewRepository->findOneByPresentation($studySessionId, $studyPosition);

@@ -10,10 +10,15 @@ services:
             string $vocabularyEnrichmentBaseUrl: '%env(VOCABULARY_ENRICHMENT_BASE_URL)%'
             float $vocabularyEnrichmentTimeout: '%env(float:VOCABULARY_ENRICHMENT_TIMEOUT)%'
             int $studyMinSiblingDistance: '%env(int:STUDY_MIN_SIBLING_DISTANCE)%'
+            int $studyDailyReviewLimit: '%env(int:STUDY_DAILY_REVIEW_LIMIT)%'
+            int $studyDailyNewLimit: '%env(int:STUDY_DAILY_NEW_LIMIT)%'
             string $fixturesDir: '%kernel.project_dir%/../fixtures'
 
     App\Clock\ClockInterface:
         class: App\Clock\SystemClock
+
+    App\Fsrs\FsrsSchedulerInterface:
+        class: App\Fsrs\LibraryFsrsScheduler
 
     App\:
         resource: '../src/'

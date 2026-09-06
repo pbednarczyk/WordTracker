@@ -133,6 +133,46 @@ final class LearningReviewRepository extends ServiceEntityRepository
             ->getOneOrNullResult();
     }
 
+    public function countDailyNewIntroductions(\DateTimeImmutable $dayStart, \DateTimeImmutable $dayEnd): int
+    {
+        $sql = <<<'SQL'
+            SELECT COUNT(*) FROM (
+                SELECT learning_card_id, MIN(reviewed_at) AS first_reviewed_at
+                FROM learning_review
+                WHERE learning_card_id IS NOT NULL
+                GROUP BY learning_card_id
+            ) first_reviews
+            WHERE first_reviewed_at >= :dayStart AND first_reviewed_at < :dayEnd
+            SQL;
+
+        return (int) $this->getEntityManager()->getConnection()->fetchOne($sql, [
+            'dayStart' => $this->formatSqlTime($dayStart),
+            'dayEnd' => $this->formatSqlTime($dayEnd),
+        ]);
+    }
+
+    public function countDailyRepeatReviews(\DateTimeImmutable $dayStart, \DateTimeImmutable $dayEnd): int
+    {
+        $sql = <<<'SQL'
+            SELECT COUNT(lr.id)
+            FROM learning_review lr
+            INNER JOIN (
+                SELECT learning_card_id, MIN(reviewed_at) AS first_reviewed_at
+                FROM learning_review
+                WHERE learning_card_id IS NOT NULL
+                GROUP BY learning_card_id
+            ) first_reviews ON first_reviews.learning_card_id = lr.learning_card_id
+            WHERE lr.reviewed_at >= :dayStart
+              AND lr.reviewed_at < :dayEnd
+              AND first_reviews.first_reviewed_at < :dayStart
+            SQL;
+
+        return (int) $this->getEntityManager()->getConnection()->fetchOne($sql, [
+            'dayStart' => $this->formatSqlTime($dayStart),
+            'dayEnd' => $this->formatSqlTime($dayEnd),
+        ]);
+    }
+
     private function countForQuery(LearningReviewQuery $query): int
     {
         $queryBuilder = $this->createQueryBuilder('lr')
@@ -209,5 +249,10 @@ final class LearningReviewRepository extends ServiceEntityRepository
         }
 
         return null;
+    }
+
+    private function formatSqlTime(\DateTimeImmutable $time): string
+    {
+        return $time->format('Y-m-d H:i:s');
     }
 }

@@ -163,20 +163,50 @@ The dashboard lists active cards by default and supports filtering by type,
 publication, vocabulary status, active state, and lemma search. Results are
 sorted and paginated server-side.
 
-Use `Study cards` to start the first manual study mode:
+Use `Study cards` to start the default spaced-repetition study mode:
 
 ```text
 front -> Reveal answer -> Again / Hard / Good / Easy -> next card
 ```
 
+WordTracker uses the Composer package `scottlaurent/fsrs` locked in
+`composer.lock` for Free Spaced Repetition Scheduler behavior. The domain code
+depends on `FsrsSchedulerInterface`; `LibraryFsrsScheduler` is the adapter that
+maps WordTracker cards and ratings to the library. Do not replace FSRS with
+handcrafted fixed intervals such as `GOOD = 7 days`.
+
+Scheduling responsibilities are intentionally split:
+
+- `LearningCardGenerator`: what can be studied.
+- FSRS / `DueCardSelector`: when a card should be studied.
+- `SmartStudyQueueBuilder`: in what order selected cards are shown.
+- `LearningReview`: what happened.
+
+Cards with no FSRS state are `NEW`. Reviewed cards whose `nextReviewAt` is in
+the past or now are `DUE`; reviewed cards with a future `nextReviewAt` are
+`SCHEDULED`. The default Study action selects due review cards first, then new
+cards, and excludes future scheduled cards from normal sessions.
+
 Study mode uses a temporary HTTP session snapshot of card IDs. A smart queue is
-built once at session start: eligible cards are shuffled, sibling cards for the
-same `VocabularyItem` are spread apart where feasible, and long streaks of the
-same card type are avoided as a secondary rule. Refreshing the same session does
-not reshuffle it; starting a new session can produce a new order.
+built once at session start after due/new selection: eligible cards are
+shuffled, sibling cards for the same `VocabularyItem` are spread apart where
+feasible, and long streaks of the same card type are avoided as a secondary
+rule. Refreshing the same session does not reshuffle it; starting a new session
+can produce a new order.
 
 The queue answers only the ordering question for already eligible cards. It does
-not decide when a card is due and is not SRS yet.
+not decide when a card is due and does not calculate scheduling intervals.
+
+Daily study limits are configured with:
+
+```text
+STUDY_DAILY_REVIEW_LIMIT=100
+STUDY_DAILY_NEW_LIMIT=20
+```
+
+Review limits apply to already-started FSRS cards that are due. New limits apply
+to cards that enter FSRS for the first time during the current application day.
+Without user time zones, daily limits use PHP's configured application timezone.
 
 Each study session gets a server-side UUID. Each visible card presentation is
 identified by `studySessionId + studyPosition`, and review persistence has a
@@ -196,10 +226,10 @@ After Reveal, choose one self-assessment rating:
 - `EASY`: immediate recall.
 
 Ratings create immutable `LearningReview` rows for the shown `LearningCard`.
-They do not change `VocabularyItem.status`, do not activate or deactivate
-cards, and do not affect publication coverage. `AGAIN` records the failed
-recall but does not reinsert the card into the current queue yet; retry
-scheduling belongs to the future SRS stage.
+The same transaction updates the card's FSRS state and `nextReviewAt`. They do
+not change `VocabularyItem.status`, do not activate or deactivate cards, and do
+not affect publication coverage. `AGAIN` is passed to FSRS as a failed recall,
+but it does not reinsert the card into the already-built current queue.
 
 Open review history at:
 
@@ -555,7 +585,7 @@ The requests include assertions for the current response contract.
 
 ## Data Model
 
-Current scope includes the MVP 1 persistence model, backend NLP publication analysis, global vocabulary status management, coverage calculation, and the Twig UI for creating, analyzing, filtering, and updating publication vocabulary. There is no upload flow or SRS yet.
+Current scope includes the MVP 1 persistence model, backend NLP publication analysis, global vocabulary status management, coverage calculation, FSRS scheduling for learning cards, and the Twig UI for creating, analyzing, filtering, studying, and updating publication vocabulary. There is no upload flow yet.
 
 ```text
 Publication
@@ -588,7 +618,7 @@ occurrence counts; it is not cached on `Publication`.
 
 `LearningCard.isActive` controls whether a card appears in the default learning
 queue. Deactivating a card does not delete it and does not change the global
-vocabulary status.
+vocabulary status. It also does not reset FSRS state or review history.
 
 `VocabularyItem` identity is unique by:
 

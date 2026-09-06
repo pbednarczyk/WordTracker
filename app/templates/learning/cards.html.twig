@@ -111,6 +111,7 @@
                         <th>Front</th>
                         <th>Back</th>
                         <th>Reviews</th>
+                        <th>Scheduling</th>
                         <th>Status</th>
                         <th>Action</th>
                     </tr>
@@ -138,6 +139,21 @@
                                     <div class="muted">Last {{ stats.lastReviewedAt|date('Y-m-d H:i') }}</div>
                                 {% else %}
                                     <div class="muted">Never</div>
+                                {% endif %}
+                            </td>
+                            {% set schedulingStatus = card.schedulingStatus(now) %}
+                            <td>
+                                <span class="badge {{ schedulingStatus == 'DUE' ? 'badge--warning' : (schedulingStatus == 'SCHEDULED' ? 'badge--cards' : 'badge--unknown') }}">{{ schedulingStatus }}</span>
+                                {% if card.nextReviewAt %}
+                                    <div class="muted">Next {{ card.nextReviewAt|date('Y-m-d H:i') }}</div>
+                                {% else %}
+                                    <div class="muted">Next -</div>
+                                {% endif %}
+                                {% if card.lastReviewAt %}
+                                    <div class="muted">Last {{ card.lastReviewAt|date('Y-m-d H:i') }}</div>
+                                {% endif %}
+                                {% if card.fsrsStability is not null and card.fsrsDifficulty is not null %}
+                                    <div class="muted">S {{ card.fsrsStability|number_format(2) }} · D {{ card.fsrsDifficulty|number_format(2) }}</div>
                                 {% endif %}
                             </td>
                             <td>

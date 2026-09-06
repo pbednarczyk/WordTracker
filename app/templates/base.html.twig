@@ -309,6 +309,11 @@
                 color: var(--muted);
             }
 
+            .badge--warning {
+                background: var(--warning-bg);
+                color: #7d5f00;
+            }
+
             .badge--enriched {
                 background: #fff8c5;
                 color: #7d5f00;
@@ -416,6 +421,26 @@
 
             .session-summary__item strong {
                 display: block;
+                font-size: 22px;
+            }
+
+            .learning-overview {
+                display: grid;
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+                gap: 12px;
+                margin-bottom: 24px;
+            }
+
+            .learning-overview__item {
+                padding: 14px;
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                background: var(--surface);
+            }
+
+            .learning-overview__item strong {
+                display: block;
+                margin-top: 4px;
                 font-size: 22px;
             }
 
@@ -689,6 +714,7 @@
                 .grid,
                 .form-grid,
                 .definition-list,
+                .learning-overview,
                 .session-summary {
                     grid-template-columns: 1fr;
                 }

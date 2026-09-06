@@ -14,6 +14,23 @@
         </div>
     </section>
 
+    <section class="learning-overview" aria-label="Study overview">
+        <div class="learning-overview__item">
+            <span class="metric__label">Due today</span>
+            <strong>{{ studyOverview.dueToday }}</strong>
+        </div>
+        <div class="learning-overview__item">
+            <span class="metric__label">New available</span>
+            <strong>{{ studyOverview.newAvailable }}</strong>
+        </div>
+        {% if studyOverview.nextReviewAt %}
+            <div class="learning-overview__item">
+                <span class="metric__label">Next review</span>
+                <strong>{{ studyOverview.nextReviewAt|date('Y-m-d H:i') }}</strong>
+            </div>
+        {% endif %}
+    </section>
+
     <section class="panel">
         <form class="filter-panel" method="get" action="{{ path('learning_study') }}">
             <input type="hidden" name="start" value="1">
@@ -144,7 +161,7 @@
             </div>
         </div>
     {% else %}
-        <div class="empty">No active learning cards match the current filters.</div>
+        <div class="empty">No due or new learning cards match the current filters.</div>
     {% endif %}
 
     <script>

@@ -42,5 +42,10 @@ the API contract and must stay in sync with the code.
 - Review persistence must be idempotent per study session presentation
   (`studySessionId + studyPosition`) so duplicate POSTs do not create duplicate
   review rows.
+- Do not replace FSRS scheduling with handcrafted fixed intervals.
+- Learning card generation decides what can be studied. FSRS and due-card
+  selection decide when a card should be studied. `SmartStudyQueueBuilder`
+  decides in what order already selected cards are shown. `LearningReview`
+  records what happened.
 - Smart study queue ordering and future due/scheduling logic are separate
   concerns. Do not implement FSRS scheduling inside `SmartStudyQueueBuilder`.

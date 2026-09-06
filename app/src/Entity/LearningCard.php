@@ -18,6 +18,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Index(name: 'idx_learning_card_type', columns: ['type'])]
 #[ORM\Index(name: 'idx_learning_card_active', columns: ['is_active'])]
 #[ORM\Index(name: 'idx_learning_card_created_at', columns: ['created_at'])]
+#[ORM\Index(name: 'idx_learning_card_active_next_review', columns: ['is_active', 'next_review_at'])]
 class LearningCard
 {
     #[ORM\Id]
@@ -60,6 +61,36 @@ class LearningCard
 
     #[ORM\Column]
     private \DateTimeImmutable $updatedAt;
+
+    #[ORM\Column(nullable: true)]
+    private ?int $fsrsState = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?float $fsrsStability = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?float $fsrsDifficulty = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?int $fsrsElapsedDays = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?int $fsrsScheduledDays = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?int $fsrsReps = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?int $fsrsLapses = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?int $fsrsStep = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?\DateTimeImmutable $nextReviewAt = null;
+
+    #[ORM\Column(nullable: true)]
+    private ?\DateTimeImmutable $lastReviewAt = null;
 
     public function __construct(
         VocabularyItem $vocabularyItem,
@@ -153,6 +184,99 @@ class LearningCard
     public function getUpdatedAt(): \DateTimeImmutable
     {
         return $this->updatedAt;
+    }
+
+    public function getFsrsState(): ?int
+    {
+        return $this->fsrsState;
+    }
+
+    public function getFsrsStability(): ?float
+    {
+        return $this->fsrsStability;
+    }
+
+    public function getFsrsDifficulty(): ?float
+    {
+        return $this->fsrsDifficulty;
+    }
+
+    public function getFsrsElapsedDays(): ?int
+    {
+        return $this->fsrsElapsedDays;
+    }
+
+    public function getFsrsScheduledDays(): ?int
+    {
+        return $this->fsrsScheduledDays;
+    }
+
+    public function getFsrsReps(): ?int
+    {
+        return $this->fsrsReps;
+    }
+
+    public function getFsrsLapses(): ?int
+    {
+        return $this->fsrsLapses;
+    }
+
+    public function getFsrsStep(): ?int
+    {
+        return $this->fsrsStep;
+    }
+
+    public function getNextReviewAt(): ?\DateTimeImmutable
+    {
+        return $this->nextReviewAt;
+    }
+
+    public function getLastReviewAt(): ?\DateTimeImmutable
+    {
+        return $this->lastReviewAt;
+    }
+
+    public function hasFsrsState(): bool
+    {
+        return $this->fsrsState !== null;
+    }
+
+    public function schedulingStatus(\DateTimeImmutable $now): string
+    {
+        if (!$this->hasFsrsState()) {
+            return 'NEW';
+        }
+
+        if ($this->nextReviewAt !== null && $this->nextReviewAt <= $now) {
+            return 'DUE';
+        }
+
+        return 'SCHEDULED';
+    }
+
+    public function applyFsrsState(
+        int $state,
+        float $stability,
+        float $difficulty,
+        int $elapsedDays,
+        int $scheduledDays,
+        int $reps,
+        int $lapses,
+        int $step,
+        \DateTimeImmutable $nextReviewAt,
+        \DateTimeImmutable $lastReviewAt,
+    ): void {
+        $this->fsrsState = $state;
+        $this->fsrsStability = $stability;
+        $this->fsrsDifficulty = $difficulty;
+        $this->fsrsElapsedDays = $elapsedDays;
+        $this->fsrsScheduledDays = $scheduledDays;
+        $this->fsrsReps = $reps;
+        $this->fsrsLapses = $lapses;
+        $this->fsrsStep = $step;
+        $this->nextReviewAt = $nextReviewAt;
+        $this->lastReviewAt = $lastReviewAt;
+        $this->touch();
     }
 
     #[ORM\PreUpdate]

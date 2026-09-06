@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Application\DueCardSelector;
 use App\Application\SmartStudyQueueBuilder;
 use App\Application\RecordLearningReviewHandler;
 use App\Clock\ClockInterface;
@@ -37,6 +38,7 @@ final class LearningController extends AbstractController
         private readonly LearningReviewRepository $learningReviewRepository,
         private readonly PublicationRepository $publicationRepository,
         private readonly EntityManagerInterface $entityManager,
+        private readonly DueCardSelector $dueCardSelector,
         private readonly SmartStudyQueueBuilder $studyQueueBuilder,
         private readonly RecordLearningReviewHandler $recordLearningReviewHandler,
         private readonly ClockInterface $clock,
@@ -61,6 +63,7 @@ final class LearningController extends AbstractController
             'statuses' => VocabularyStatus::cases(),
             'publications' => $this->publicationRepository->findAllOrderedByCreatedAt(),
             'reviewStats' => $this->learningReviewRepository->statsByLearningCards($result->items),
+            'now' => $this->clock->now(),
         ]);
     }
 
@@ -115,9 +118,10 @@ final class LearningController extends AbstractController
     public function study(Request $request): Response
     {
         $session = $request->getSession();
+        $query = LearningCardQuery::fromParameters($request->query->all());
+        $selection = $this->dueCardSelector->select($query, LearningCardQuery::STUDY_LIMIT);
         if ($this->shouldStartStudy($request, $session)) {
-            $candidates = $this->learningCardRepository->findStudyCandidates(LearningCardQuery::fromParameters($request->query->all()));
-            $ids = $this->studyQueueBuilder->build($candidates, LearningCardQuery::STUDY_LIMIT);
+            $ids = $this->studyQueueBuilder->build($selection->cards, LearningCardQuery::STUDY_LIMIT);
             $session->set(self::STUDY_IDS_KEY, $ids);
             $session->set(self::STUDY_INDEX_KEY, 0);
             $session->set(self::STUDY_REVEALED_KEY, false);
@@ -146,6 +150,8 @@ final class LearningController extends AbstractController
             'index' => min($index, $total),
             'total' => $total,
             'selectedCount' => count($ids),
+            'studyOverview' => $selection,
+            'now' => $this->clock->now(),
             'studySessionId' => $studySessionId,
             'ratings' => ReviewRating::cases(),
             'summary' => $studySessionId !== null ? $this->learningReviewRepository->sessionSummary($studySessionId) : null,
