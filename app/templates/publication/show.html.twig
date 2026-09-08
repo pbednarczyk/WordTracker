@@ -225,9 +225,29 @@
                                                 <button class="button button--small" type="submit" name="status" value="UNKNOWN">Mark UNKNOWN</button>
                                             {% else %}
                                                 <button class="button button--small" type="submit" name="status" value="KNOWN">Mark KNOWN</button>
-                                            {% endif %}
-                                        </form>
+                                        {% endif %}
+                                    </form>
+                                    <button class="button button--small button--danger" type="button" data-dialog-open="remove-publication-vocabulary-{{ row.id }}">
+                                        <span class="button__icon" aria-hidden="true">&#128465;</span>Remove
+                                    </button>
                                     </div>
+                                    <dialog class="dialog" id="remove-publication-vocabulary-{{ row.id }}">
+                                        <div class="dialog__body">
+                                            <h2>Remove from publication?</h2>
+                                            <p>
+                                                Remove "{{ item.lemma }}" from "{{ publication.title }}"? This hides the contextual vocabulary row from coverage, exports, enrichment, and study candidates. The global vocabulary item and review history are preserved.
+                                            </p>
+                                            <div class="dialog__actions">
+                                                <form method="dialog">
+                                                    <button class="button" type="submit">Cancel</button>
+                                                </form>
+                                                <form method="post" action="{{ path('publication_vocabulary_remove', { id: row.id }) }}">
+                                                    <input type="hidden" name="_token" value="{{ csrf_token('publication_vocabulary_remove_' ~ row.id) }}">
+                                                    <button class="button button--danger" type="submit">Remove</button>
+                                                </form>
+                                            </div>
+                                        </div>
+                                    </dialog>
                                 </td>
                             </tr>
                         {% endfor %}

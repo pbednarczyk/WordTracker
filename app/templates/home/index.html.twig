@@ -3,32 +3,156 @@
 {% block title %}WordTracker{% endblock %}
 
 {% block body %}
-    <section class="page-header">
+    <section class="dashboard-hero">
         <div>
-            <h1>WordTracker</h1>
-            <p class="muted">Track the vocabulary you actually encounter.</p>
+            <h1>Your vocabulary</h1>
+            <p class="muted">A compact view of your reading, enrichment, and study progress.</p>
         </div>
         <div class="actions">
             <a class="button" href="{{ path('publication_index') }}">Publications</a>
-            <a class="button button--primary" href="{{ path('publication_new') }}">Add publication</a>
+            <a class="button" href="{{ path('learning_cards') }}">Learning</a>
+            <a class="button button--primary" href="{{ path('learning_study', { start: 1 }) }}">Study now</a>
         </div>
     </section>
 
-    <section class="panel">
-        <h2>System</h2>
-        <dl class="grid">
-            <div class="metric">
-                <dt class="metric__label">Symfony</dt>
-                <dd class="metric__value badge badge--known">OK</dd>
+    <section class="dashboard-grid dashboard-grid--summary" aria-label="Vocabulary summary">
+        <article class="dashboard-card dashboard-card--blue">
+            <span class="dashboard-card__icon" aria-hidden="true">🧠</span>
+            <span class="dashboard-card__label">Known words</span>
+            <strong>{{ stats.knownVocabularyItems }}</strong>
+        </article>
+        <article class="dashboard-card dashboard-card--green">
+            <span class="dashboard-card__icon" aria-hidden="true">📚</span>
+            <span class="dashboard-card__label">Total unique words</span>
+            <strong>{{ stats.totalVocabularyItems }}</strong>
+        </article>
+        <article class="dashboard-card dashboard-card--yellow">
+            <span class="dashboard-card__icon" aria-hidden="true">📖</span>
+            <span class="dashboard-card__label">Publications</span>
+            <strong>{{ stats.publications }}</strong>
+        </article>
+        <article class="dashboard-card dashboard-card--red">
+            <span class="dashboard-card__icon" aria-hidden="true">🔁</span>
+            <span class="dashboard-card__label">Reviews completed</span>
+            <strong>{{ stats.learningReviewsCompleted }}</strong>
+        </article>
+    </section>
+
+    <section class="dashboard-split">
+        <article class="dashboard-panel">
+            <div class="dashboard-section-head">
+                <h2>Today</h2>
+                <a class="button button--small" href="{{ path('learning_study', { start: 1 }) }}">Start</a>
             </div>
-            <div class="metric">
-                <dt class="metric__label">PostgreSQL</dt>
-                <dd class="metric__value badge {{ database_ok ? 'badge--known' : 'flash--error' }}">{{ database_ok ? 'OK' : 'ERROR' }}</dd>
+            <div class="dashboard-metrics">
+                <div>
+                    <span class="dashboard-card__icon" aria-hidden="true">📅</span>
+                    <span class="dashboard-card__label">Due now</span>
+                    <strong>{{ stats.dueCardsNow }}</strong>
+                </div>
+                <div>
+                    <span class="dashboard-card__icon" aria-hidden="true">🆕</span>
+                    <span class="dashboard-card__label">New available</span>
+                    <strong>{{ stats.newCardsAvailable }}</strong>
+                </div>
+                <div>
+                    <span class="dashboard-card__icon" aria-hidden="true">✅</span>
+                    <span class="dashboard-card__label">Reviewed today</span>
+                    <strong>{{ stats.reviewsCompletedToday }}</strong>
+                </div>
+                <div>
+                    <span class="dashboard-card__icon" aria-hidden="true">🃏</span>
+                    <span class="dashboard-card__label">Scheduled cards</span>
+                    <strong>{{ stats.scheduledCards }}</strong>
+                </div>
             </div>
-            <div class="metric">
-                <dt class="metric__label">NLP service</dt>
-                <dd class="metric__value badge {{ nlp_ok ? 'badge--known' : 'flash--error' }}">{{ nlp_ok ? 'OK' : 'ERROR' }}</dd>
+        </article>
+
+        <article class="dashboard-panel">
+            <h2>Library progress</h2>
+            <div class="dashboard-metrics dashboard-metrics--three">
+                <div>
+                    <span class="dashboard-card__icon" aria-hidden="true">👀</span>
+                    <span class="dashboard-card__label">Word encounters</span>
+                    <strong>{{ stats.totalVocabularyOccurrences }}</strong>
+                </div>
+                <div>
+                    <span class="dashboard-card__icon" aria-hidden="true">✨</span>
+                    <span class="dashboard-card__label">Enriched contexts</span>
+                    <strong>{{ stats.enrichedPublicationVocabularyContexts }}</strong>
+                </div>
+                <div>
+                    <span class="dashboard-card__icon" aria-hidden="true">🃏</span>
+                    <span class="dashboard-card__label">Learning cards</span>
+                    <strong>{{ stats.learningCards }}</strong>
+                </div>
             </div>
-        </dl>
+        </article>
+    </section>
+
+    <section class="dashboard-panel">
+        <h2>Progress</h2>
+        <div class="dashboard-progress-list">
+            <div class="dashboard-progress">
+                <div class="dashboard-progress__head">
+                    <span>Known vocabulary</span>
+                    <strong>{{ stats.knownVocabularyPercent()|number_format(1) }}%</strong>
+                </div>
+                {% set knownPercent = stats.knownVocabularyPercent() %}
+                <div class="progress progress--{{ knownPercent >= 100 ? 'complete' : (knownPercent >= 80 ? 'high' : (knownPercent >= 50 ? 'medium' : 'low')) }}">
+                    <div class="progress__bar" style="width: {{ knownPercent }}%"></div>
+                </div>
+                <p class="muted">{{ stats.knownVocabularyItems }} of {{ stats.totalVocabularyItems }} visible vocabulary items are known.</p>
+            </div>
+
+            <div class="dashboard-progress">
+                <div class="dashboard-progress__head">
+                    <span>AI enrichment coverage</span>
+                    <strong>{{ stats.enrichmentPercent()|number_format(1) }}%</strong>
+                </div>
+                {% set enrichmentPercent = stats.enrichmentPercent() %}
+                <div class="progress progress--{{ enrichmentPercent >= 100 ? 'complete' : (enrichmentPercent >= 80 ? 'high' : (enrichmentPercent >= 50 ? 'medium' : 'low')) }}">
+                    <div class="progress__bar" style="width: {{ enrichmentPercent }}%"></div>
+                </div>
+                <p class="muted">{{ stats.enrichedPublicationVocabularyContexts }} of {{ stats.activePublicationVocabularyContexts }} active contexts are enriched.</p>
+            </div>
+
+            <div class="dashboard-progress">
+                <div class="dashboard-progress__head">
+                    <span>Learning card coverage</span>
+                    <strong>{{ stats.learningCardCoveragePercent()|number_format(1) }}%</strong>
+                </div>
+                {% set cardPercent = stats.learningCardCoveragePercent() %}
+                <div class="progress progress--{{ cardPercent >= 100 ? 'complete' : (cardPercent >= 80 ? 'high' : (cardPercent >= 50 ? 'medium' : 'low')) }}">
+                    <div class="progress__bar" style="width: {{ cardPercent }}%"></div>
+                </div>
+                <p class="muted">{{ stats.enrichedContextsWithLearningCards }} enriched contexts have active learning cards.</p>
+            </div>
+        </div>
+    </section>
+
+    <section class="dashboard-split">
+        <article class="dashboard-panel">
+            <h2>Coverage averages</h2>
+            <div class="dashboard-metrics">
+                <div>
+                    <span class="dashboard-card__label">Vocabulary coverage</span>
+                    <strong>{{ stats.averageVocabularyCoverage is null ? 'N/A' : stats.averageVocabularyCoverage|number_format(1) ~ '%' }}</strong>
+                </div>
+                <div>
+                    <span class="dashboard-card__label">Text coverage</span>
+                    <strong>{{ stats.averageTextCoverage is null ? 'N/A' : stats.averageTextCoverage|number_format(1) ~ '%' }}</strong>
+                </div>
+            </div>
+        </article>
+
+        <article class="dashboard-panel dashboard-panel--system">
+            <h2>System</h2>
+            <div class="dashboard-status">
+                <span>Symfony <strong class="badge badge--known">OK</strong></span>
+                <span>PostgreSQL <strong class="badge {{ database_ok ? 'badge--known' : 'flash--error' }}">{{ database_ok ? 'OK' : 'ERROR' }}</strong></span>
+                <span>NLP service <strong class="badge {{ nlp_ok ? 'badge--known' : 'flash--error' }}">{{ nlp_ok ? 'OK' : 'ERROR' }}</strong></span>
+            </div>
+        </article>
     </section>
 {% endblock %}

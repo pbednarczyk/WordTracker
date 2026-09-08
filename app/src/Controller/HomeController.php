@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller;
 
+use App\Application\HomeDashboardStatsProvider;
 use Doctrine\DBAL\Connection;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Response;
@@ -15,6 +16,7 @@ final class HomeController extends AbstractController
     public function __construct(
         private readonly Connection $connection,
         private readonly HttpClientInterface $httpClient,
+        private readonly HomeDashboardStatsProvider $dashboardStatsProvider,
         private readonly string $nlpHealthUrl,
     ) {
     }
@@ -28,6 +30,7 @@ final class HomeController extends AbstractController
         return $this->render('home/index.html.twig', [
             'database_ok' => $databaseOk,
             'nlp_ok' => $nlpOk,
+            'stats' => $this->dashboardStatsProvider->getStats(),
         ], new Response(status: $databaseOk && $nlpOk ? Response::HTTP_OK : Response::HTTP_SERVICE_UNAVAILABLE));
     }
 

@@ -344,6 +344,7 @@ final class PublicationUiTest extends WebTestCase
         $publicationVocabulary = $this->publicationVocabularyFor($publication, $item);
 
         $crawler = $this->client->request('GET', '/publications/'.$publication->getId());
+        self::assertSelectorTextContains('body', 'Remove');
         $token = (string) $crawler
             ->filter(sprintf('form[action="/publication-vocabulary/%d/remove"] input[name="_token"]', $publicationVocabulary->getId()))
             ->attr('value');
@@ -387,6 +388,7 @@ final class PublicationUiTest extends WebTestCase
         $removedContext = $this->publicationVocabularyFor($firstPublication, $item);
 
         $crawler = $this->client->request('GET', '/vocabulary/'.$item->getId());
+        self::assertSelectorTextContains('body', 'Remove from publication');
         $token = (string) $crawler
             ->filter(sprintf('form[action="/publication-vocabulary/%d/remove"] input[name="_token"]', $removedContext->getId()))
             ->attr('value');
@@ -411,6 +413,7 @@ final class PublicationUiTest extends WebTestCase
         $betaContext = $this->publicationVocabularyFor($publication, $beta);
 
         $crawler = $this->client->request('GET', '/vocabulary/'.$beta->getId());
+        self::assertSelectorTextContains('body', 'Remove from publication');
         $token = (string) $crawler
             ->filter(sprintf('form[action="/publication-vocabulary/%d/remove"] input[name="_token"]', $betaContext->getId()))
             ->attr('value');

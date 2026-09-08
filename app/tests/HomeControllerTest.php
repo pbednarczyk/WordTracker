@@ -14,7 +14,10 @@ final class HomeControllerTest extends WebTestCase
         $client->request('GET', '/');
 
         self::assertResponseIsSuccessful();
-        self::assertSelectorTextContains('h1', 'WordTracker');
+        self::assertSelectorTextContains('h1', 'Your vocabulary');
+        self::assertSelectorTextContains('body', 'Known words');
+        self::assertSelectorTextContains('body', 'Due now');
+        self::assertSelectorTextContains('body', 'Library progress');
         self::assertSelectorTextContains('body', 'Symfony');
         self::assertSelectorTextContains('body', 'PostgreSQL');
         self::assertSelectorTextContains('body', 'NLP service');

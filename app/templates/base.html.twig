@@ -210,6 +210,150 @@
                 font-weight: 750;
             }
 
+            .dashboard-hero {
+                display: flex;
+                align-items: flex-start;
+                justify-content: space-between;
+                gap: 24px;
+                margin-bottom: 22px;
+                padding: 22px;
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                background: linear-gradient(135deg, #ffffff 0%, #eef6ff 48%, #f5fbf1 100%);
+            }
+
+            .dashboard-grid,
+            .dashboard-split,
+            .dashboard-metrics,
+            .dashboard-progress-list {
+                display: grid;
+                gap: 16px;
+            }
+
+            .dashboard-grid--summary {
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                margin-bottom: 16px;
+            }
+
+            .dashboard-split {
+                grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+                margin-bottom: 16px;
+            }
+
+            .dashboard-card,
+            .dashboard-panel {
+                border: 1px solid var(--border);
+                border-radius: 8px;
+                background: var(--surface);
+            }
+
+            .dashboard-card {
+                min-height: 136px;
+                padding: 18px;
+            }
+
+            .dashboard-card--blue {
+                background: #eef6ff;
+                border-color: #c8ddf6;
+            }
+
+            .dashboard-card--green {
+                background: #ecfdf3;
+                border-color: #b4d9c4;
+            }
+
+            .dashboard-card--yellow {
+                background: #fff8c5;
+                border-color: #f1d08a;
+            }
+
+            .dashboard-card--red {
+                background: #fff0f3;
+                border-color: #f0b6c1;
+            }
+
+            .dashboard-card__icon {
+                display: block;
+                margin-bottom: 12px;
+                font-size: 22px;
+            }
+
+            .dashboard-card__label {
+                display: block;
+                color: var(--muted);
+                font-size: 13px;
+                font-weight: 750;
+                text-transform: uppercase;
+            }
+
+            .dashboard-card strong,
+            .dashboard-metrics strong {
+                display: block;
+                margin-top: 6px;
+                font-size: 34px;
+                line-height: 1.1;
+            }
+
+            .dashboard-panel {
+                padding: 20px;
+            }
+
+            .dashboard-section-head,
+            .dashboard-progress__head {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                gap: 12px;
+            }
+
+            .dashboard-metrics {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
+            .dashboard-metrics--three {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
+            .dashboard-metrics > div {
+                min-height: 108px;
+                padding: 14px;
+                border-radius: 8px;
+                background: var(--surface-muted);
+            }
+
+            .dashboard-progress-list {
+                grid-template-columns: repeat(3, minmax(0, 1fr));
+            }
+
+            .dashboard-progress {
+                min-width: 0;
+            }
+
+            .dashboard-progress__head {
+                margin-bottom: 8px;
+                font-weight: 750;
+            }
+
+            .dashboard-progress p {
+                margin: 8px 0 0;
+                font-size: 14px;
+            }
+
+            .dashboard-status {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 10px;
+            }
+
+            .dashboard-status span {
+                display: inline-flex;
+                align-items: center;
+                gap: 8px;
+                padding: 10px 12px;
+                border-radius: 8px;
+                background: var(--surface-muted);
+            }
+
             .publication-meta {
                 margin-top: 4px;
                 font-size: 14px;
@@ -744,9 +888,18 @@
                 .grid,
                 .form-grid,
                 .definition-list,
+                .dashboard-grid--summary,
+                .dashboard-split,
+                .dashboard-metrics,
+                .dashboard-metrics--three,
+                .dashboard-progress-list,
                 .learning-overview,
                 .session-summary {
                     grid-template-columns: 1fr;
+                }
+
+                .dashboard-hero {
+                    flex-direction: column;
                 }
 
                 .rating-grid {
