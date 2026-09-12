@@ -29,6 +29,7 @@ final readonly class PublicationVocabularyExporter
         'meaning_in_context',
         'simple_example',
         'cefr_level',
+        'model',
         'first_context_sentence',
     ];
 
@@ -80,6 +81,7 @@ final readonly class PublicationVocabularyExporter
                 meaningInContext: $enrichment?->getMeaningInContext() ?? '',
                 simpleExample: $enrichment?->getSimpleExample() ?? '',
                 cefrLevel: $enrichment?->getCefrLevel() ?? '',
+                model: $enrichment?->getModel() ?? '',
                 firstContextSentence: $itemId === null ? '' : ($contexts[$itemId] ?? ''),
             );
         }
@@ -107,6 +109,7 @@ final readonly class PublicationVocabularyExporter
                 $row->meaningInContext,
                 $row->simpleExample,
                 $row->cefrLevel,
+                $row->model,
                 $row->firstContextSentence,
             ], ',', '"', '');
         }

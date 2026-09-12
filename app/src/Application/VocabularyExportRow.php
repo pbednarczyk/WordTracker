@@ -17,6 +17,7 @@ final readonly class VocabularyExportRow
         public string $meaningInContext,
         public string $simpleExample,
         public string $cefrLevel,
+        public string $model,
         public string $firstContextSentence,
     ) {
     }
