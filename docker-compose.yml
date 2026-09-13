@@ -1,22 +1,22 @@
 services:
-  nginx:
+  nginx-dev:
     image: nginx:1.27-alpine
-    container_name: wordtracker-nginx
+    container_name: wordtracker-nginx-dev
     depends_on:
-      - app
+      - app-dev
     ports:
       - "8080:80"
     volumes:
       - ./app:/var/www/app
-      - ./docker/nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./docker/nginx/dev.conf:/etc/nginx/conf.d/default.conf:ro
     networks:
       - wordtracker
 
-  app:
+  app-dev:
     build:
       context: .
       dockerfile: docker/php/Dockerfile
-    container_name: wordtracker-app
+    container_name: wordtracker-app-dev
     depends_on:
       db:
         condition: service_healthy
@@ -34,7 +34,47 @@ services:
     volumes:
       - ./app:/var/www/app
       - ./fixtures:/var/www/fixtures:ro
-      - app_var:/var/www/app/var
+      - app_var_dev:/var/www/app/var
+    networks:
+      - wordtracker
+
+  nginx-prod:
+    image: nginx:1.27-alpine
+    container_name: wordtracker-nginx-prod
+    depends_on:
+      - app-prod
+    ports:
+      - "8081:80"
+    volumes:
+      - ./app:/var/www/app
+      - ./docker/nginx/prod.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - wordtracker
+
+  app-prod:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    container_name: wordtracker-app-prod
+    depends_on:
+      db:
+        condition: service_healthy
+      nlp:
+        condition: service_started
+    environment:
+      APP_ENV: prod
+      APP_DEBUG: "0"
+      XDEBUG_MODE: "off"
+      APP_SECRET: local-dev-secret-change-me
+      DATABASE_URL: postgresql://wordtracker:wordtracker@db:5432/wordtracker?serverVersion=17&charset=utf8
+      NLP_BASE_URL: http://nlp:8000
+      NLP_HEALTH_URL: http://nlp:8000/health
+      VOCABULARY_ENRICHMENT_BASE_URL: http://nlp:8000
+      VOCABULARY_ENRICHMENT_TIMEOUT: "120"
+    volumes:
+      - ./app:/var/www/app
+      - ./fixtures:/var/www/fixtures:ro
+      - app_var_prod:/var/www/app/var
     networks:
       - wordtracker
 
@@ -99,5 +139,6 @@ networks:
 
 volumes:
   db_data:
-  app_var:
+  app_var_dev:
+  app_var_prod:
   ollama_data:

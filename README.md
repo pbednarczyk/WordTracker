@@ -25,6 +25,52 @@ Open the application at:
 http://localhost:8080
 ```
 
+## Local DEV and PROD environments
+
+Run from Ubuntu/WSL:
+
+```bash
+docker compose up -d --build
+docker compose exec --user www-data app-prod php bin/console cache:warmup --env=prod
+```
+
+| Environment | URL | Symfony | Debug / profiler |
+| --- | --- | --- | --- |
+| DEV | http://192.168.50.77:8080 | `APP_ENV=dev`, `APP_DEBUG=1` | Enabled |
+| PROD | http://192.168.50.77:8081 | `APP_ENV=prod`, `APP_DEBUG=0` | Disabled |
+
+Run cache/console checks with `docker compose exec --user www-data app-dev`
+or `app-prod` to avoid creating root-owned cache files.
+
+Localhost also works on ports 8080 and 8081. Both PHP-FPM instances use the
+same bind-mounted `./app` source, the same `wordtracker` PostgreSQL database,
+and the same NLP and Ollama services. Source edits affect both environments;
+PROD cache may need clearing after changes. This is local runtime separation,
+not an image-based production deployment. Xdebug is disabled in PROD.
+
+`app_var_dev` and `app_var_prod` separately mount `/var/www/app/var`, isolating
+Symfony cache, logs, and runtime files. Existing `db_data` and `ollama_data`
+volumes remain unchanged. Never use `docker compose down -v` or remove these
+persistent volumes. No migration or database reset is needed for this split.
+
+When upgrading from the old single-instance setup, remove only the obsolete
+containers before starting (their volumes are retained):
+
+```bash
+docker stop wordtracker-nginx wordtracker-app
+docker rm wordtracker-nginx wordtracker-app
+docker compose up -d --build
+```
+
+Later, manually run this command in **Windows PowerShell, not WSL**, to point
+`https://silvermonkey.tail288d38.ts.net/` at `http://localhost:8081`:
+
+```powershell
+& "C:\Program Files\Tailscale\tailscale.exe" serve --https=443 http://localhost:8081
+```
+
+Tailscale is managed on the Windows host; it is not configured by this setup.
+
 ## Using WordTracker
 
 1. Open:
@@ -325,7 +371,8 @@ Models are stored in the persistent `ollama_data` volume mounted at
 
 ## URLs
 
-- Symfony application: `http://localhost:8080`
+- Symfony DEV: `http://localhost:8080`
+- Symfony PROD: `http://localhost:8081`
 - NLP healthcheck from inside Docker: `http://nlp:8000/health`
 - NLP healthcheck from host: `http://localhost:8000/health`
 - NLP Swagger UI: `http://localhost:8000/docs`
@@ -351,9 +398,9 @@ Direct alternatives without `make`:
 docker compose build
 docker compose up -d
 docker compose exec ollama ollama pull gemma3
-docker compose exec app php bin/console doctrine:migrations:migrate --no-interaction
-docker compose exec app php bin/console doctrine:schema:validate
-docker compose run --rm -e APP_ENV=test app ./vendor/bin/phpunit
+docker compose exec app-dev php bin/console doctrine:migrations:migrate --no-interaction
+docker compose exec app-dev php bin/console doctrine:schema:validate
+docker compose run --rm -e APP_ENV=test app-dev ./vendor/bin/phpunit
 docker compose run --rm nlp pytest
 docker compose down
 ```
@@ -378,9 +425,9 @@ make php-test
 Equivalent Docker Compose commands:
 
 ```bash
-docker compose run --rm -e APP_ENV=test app php bin/console doctrine:database:create --if-not-exists --env=test
-docker compose run --rm -e APP_ENV=test app php bin/console doctrine:migrations:migrate --no-interaction --env=test
-docker compose run --rm -e APP_ENV=test app ./vendor/bin/phpunit
+docker compose run --rm -e APP_ENV=test app-dev php bin/console doctrine:database:create --if-not-exists --env=test
+docker compose run --rm -e APP_ENV=test app-dev php bin/console doctrine:migrations:migrate --no-interaction --env=test
+docker compose run --rm -e APP_ENV=test app-dev ./vendor/bin/phpunit
 ```
 
 Tests may destructively reset only `wordtracker_test`. Reset helpers verify the
@@ -392,16 +439,13 @@ Never point `APP_ENV=test` to `wordtracker`.
 ## Architecture
 
 ```text
-Browser
-  |
-nginx
-  |
-Symfony
-  |-- PostgreSQL
-  `-- FastAPI NLP
+Browser :8080 -> nginx-dev  -> app-dev  (var: app_var_dev)
+Browser :8081 -> nginx-prod -> app-prod (var: app_var_prod)
+                                |
+                     shared db and nlp -> ollama
 ```
 
-The Symfony container reaches PostgreSQL as `db:5432` and the NLP service as `http://nlp:8000/health`.
+Both Symfony containers reach PostgreSQL as `db:5432` and the NLP service as `http://nlp:8000/health`.
 
 ## Publication Analysis Pipeline
 
@@ -430,21 +474,21 @@ Tokens whose `entity_type` is a named-entity category such as `PERSON`, `GPE`, `
 Analyze an existing publication:
 
 ```bash
-docker compose exec app php bin/console wordtracker:publication:analyze <publication-id>
+docker compose exec app-dev php bin/console wordtracker:publication:analyze <publication-id>
 ```
 
 Create and analyze the development fixture from `fixtures/sample.txt`:
 
 ```bash
-docker compose exec app php bin/console wordtracker:fixture:analyze
+docker compose exec app-dev php bin/console wordtracker:fixture:analyze
 ```
 
 Useful database checks:
 
 ```bash
-docker compose exec app php bin/console doctrine:query:sql "SELECT id, title, analyzed_at FROM publication ORDER BY id DESC LIMIT 5"
-docker compose exec app php bin/console doctrine:query:sql "SELECT lemma, part_of_speech, status FROM vocabulary_item ORDER BY lemma LIMIT 50"
-docker compose exec app php bin/console doctrine:query:sql "SELECT vi.lemma, vi.part_of_speech, pv.occurrences FROM publication_vocabulary pv JOIN vocabulary_item vi ON vi.id = pv.vocabulary_item_id ORDER BY pv.occurrences DESC LIMIT 20"
+docker compose exec app-dev php bin/console doctrine:query:sql "SELECT id, title, analyzed_at FROM publication ORDER BY id DESC LIMIT 5"
+docker compose exec app-dev php bin/console doctrine:query:sql "SELECT lemma, part_of_speech, status FROM vocabulary_item ORDER BY lemma LIMIT 50"
+docker compose exec app-dev php bin/console doctrine:query:sql "SELECT vi.lemma, vi.part_of_speech, pv.occurrences FROM publication_vocabulary pv JOIN vocabulary_item vi ON vi.id = pv.vocabulary_item_id ORDER BY pv.occurrences DESC LIMIT 20"
 ```
 
 ## NLP Service
@@ -683,7 +727,7 @@ make logs
 Check the database from Symfony:
 
 ```bash
-docker compose exec app php bin/console doctrine:query:sql "SELECT 1"
+docker compose exec app-dev php bin/console doctrine:query:sql "SELECT 1"
 ```
 
 Check the NLP service:

@@ -4,7 +4,7 @@ COMPOSE=docker compose
 
 install:
 	$(COMPOSE) build
-	$(COMPOSE) run --rm app composer install
+	$(COMPOSE) run --rm app-dev composer install
 	$(COMPOSE) run --rm nlp python -m pip install -r requirements.txt
 
 start:
@@ -19,22 +19,22 @@ logs:
 	$(COMPOSE) logs -f
 
 migrate:
-	$(COMPOSE) exec app php bin/console doctrine:migrations:migrate --no-interaction
+	$(COMPOSE) exec app-dev php bin/console doctrine:migrations:migrate --no-interaction
 
 schema-validate:
-	$(COMPOSE) exec app php bin/console doctrine:schema:validate
+	$(COMPOSE) exec app-dev php bin/console doctrine:schema:validate
 
 test: php-test nlp-test
 
 test-db:
-	$(COMPOSE) run --rm -e APP_ENV=test app php bin/console doctrine:database:create --if-not-exists --env=test
-	$(COMPOSE) run --rm -e APP_ENV=test app php bin/console doctrine:migrations:migrate --no-interaction --env=test
+	$(COMPOSE) run --rm -e APP_ENV=test app-dev php bin/console doctrine:database:create --if-not-exists --env=test
+	$(COMPOSE) run --rm -e APP_ENV=test app-dev php bin/console doctrine:migrations:migrate --no-interaction --env=test
 
 php-test: test-db
-	$(COMPOSE) run --rm -e APP_ENV=test app ./vendor/bin/phpunit
+	$(COMPOSE) run --rm -e APP_ENV=test app-dev ./vendor/bin/phpunit
 
 nlp-test:
 	$(COMPOSE) run --rm nlp pytest
 
 shell:
-	$(COMPOSE) exec app sh
+	$(COMPOSE) exec app-dev sh
