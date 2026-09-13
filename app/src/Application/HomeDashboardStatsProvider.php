@@ -46,7 +46,7 @@ final readonly class HomeDashboardStatsProvider
                 SELECT COUNT(DISTINCT vi.id)
                 FROM vocabulary_item vi
                 INNER JOIN publication_vocabulary pv ON pv.vocabulary_item_id = vi.id
-                WHERE pv.deleted_at IS NULL AND vi.status = 'KNOWN'
+                WHERE pv.deleted_at IS NULL AND vi.status IN ('KNOWN', 'MATURE')
                 SQL,
         );
     }
@@ -199,7 +199,7 @@ final readonly class HomeDashboardStatsProvider
                 FROM (
                     SELECT pv.publication_id,
                            COUNT(pv.id) AS unique_total,
-                           SUM(CASE WHEN vi.status = 'KNOWN' THEN 1 ELSE 0 END) AS unique_known
+                           SUM(CASE WHEN vi.status IN ('KNOWN', 'MATURE') THEN 1 ELSE 0 END) AS unique_known
                     FROM publication_vocabulary pv
                     INNER JOIN vocabulary_item vi ON vi.id = pv.vocabulary_item_id
                     WHERE pv.deleted_at IS NULL
@@ -217,7 +217,7 @@ final readonly class HomeDashboardStatsProvider
                 FROM (
                     SELECT pv.publication_id,
                            SUM(pv.occurrences) AS occurrences_total,
-                           SUM(CASE WHEN vi.status = 'KNOWN' THEN pv.occurrences ELSE 0 END) AS occurrences_known
+                           SUM(CASE WHEN vi.status IN ('KNOWN', 'MATURE') THEN pv.occurrences ELSE 0 END) AS occurrences_known
                     FROM publication_vocabulary pv
                     INNER JOIN vocabulary_item vi ON vi.id = pv.vocabulary_item_id
                     WHERE pv.deleted_at IS NULL

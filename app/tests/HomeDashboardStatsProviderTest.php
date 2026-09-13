@@ -45,22 +45,28 @@ final class HomeDashboardStatsProviderTest extends KernelTestCase
         $secondPublication = new Publication('Second', PublicationType::ARTICLE, 'en', rawText: 'Mastered.');
         $known = $this->item('known', VocabularyStatus::KNOWN);
         $unknown = $this->item('unknown', VocabularyStatus::UNKNOWN);
-        $mastered = $this->item('mastered', VocabularyStatus::KNOWN);
+        $mastered = $this->item('mastered', VocabularyStatus::MATURE);
+        $learning = $this->item('learning', VocabularyStatus::LEARNING);
+        $lapsed = $this->item('lapsed', VocabularyStatus::LAPSED);
         $deleted = $this->item('deleted', VocabularyStatus::KNOWN);
 
         $knownContext = new PublicationVocabulary($firstPublication, $known, 7);
         $unknownContext = new PublicationVocabulary($firstPublication, $unknown, 3);
+        $learningContext = new PublicationVocabulary($firstPublication, $learning, 2);
+        $lapsedContext = new PublicationVocabulary($firstPublication, $lapsed, 4);
         $masteredContext = new PublicationVocabulary($secondPublication, $mastered, 5);
         $deletedContext = new PublicationVocabulary($firstPublication, $deleted, 99);
         $deletedContext->softDelete($this->now->modify('-1 day'));
 
-        foreach ([$firstPublication, $secondPublication, $knownContext, $unknownContext, $masteredContext, $deletedContext] as $entity) {
+        foreach ([$firstPublication, $secondPublication, $knownContext, $unknownContext, $learningContext, $lapsedContext, $masteredContext, $deletedContext] as $entity) {
             $this->entityManager->persist($entity);
         }
 
         $this->persistOccurrence($firstPublication, $known, 'known', 1);
         $this->persistOccurrence($firstPublication, $unknown, 'unknown', 2);
-        $this->persistOccurrence($secondPublication, $mastered, 'mastered', 3);
+        $this->persistOccurrence($firstPublication, $learning, 'learning', 3);
+        $this->persistOccurrence($firstPublication, $lapsed, 'lapsed', 4);
+        $this->persistOccurrence($secondPublication, $mastered, 'mastered', 5);
         $this->persistOccurrence($firstPublication, $deleted, 'deleted', 4);
         $this->persistEnrichment($knownContext);
         $this->persistEnrichment($masteredContext);
@@ -86,23 +92,23 @@ final class HomeDashboardStatsProviderTest extends KernelTestCase
         $stats = $this->provider()->getStats();
 
         self::assertSame(2, $stats->knownVocabularyItems);
-        self::assertSame(3, $stats->totalVocabularyItems);
+        self::assertSame(5, $stats->totalVocabularyItems);
         self::assertSame(2, $stats->publications);
         self::assertSame(2, $stats->learningReviewsCompleted);
         self::assertSame(1, $stats->dueCardsNow);
         self::assertSame(1, $stats->newCardsAvailable);
         self::assertSame(1, $stats->reviewsCompletedToday);
         self::assertSame(1, $stats->scheduledCards);
-        self::assertSame(3, $stats->totalVocabularyOccurrences);
-        self::assertSame(3, $stats->activePublicationVocabularyContexts);
+        self::assertSame(5, $stats->totalVocabularyOccurrences);
+        self::assertSame(5, $stats->activePublicationVocabularyContexts);
         self::assertSame(2, $stats->enrichedPublicationVocabularyContexts);
         self::assertSame(3, $stats->learningCards);
         self::assertSame(2, $stats->enrichedContextsWithLearningCards);
-        self::assertSame(66.7, $stats->knownVocabularyPercent());
-        self::assertSame(66.7, $stats->enrichmentPercent());
+        self::assertSame(40.0, $stats->knownVocabularyPercent());
+        self::assertSame(40.0, $stats->enrichmentPercent());
         self::assertSame(100.0, $stats->learningCardCoveragePercent());
-        self::assertSame(75.0, $stats->averageVocabularyCoverage);
-        self::assertSame(85.0, $stats->averageTextCoverage);
+        self::assertSame(62.5, $stats->averageVocabularyCoverage);
+        self::assertSame(71.9, $stats->averageTextCoverage);
     }
 
     public function testDashboardStatsHandleEmptyDenominatorsSafely(): void
@@ -130,6 +136,8 @@ final class HomeDashboardStatsProviderTest extends KernelTestCase
         $item = new VocabularyItem('en', $lemma, 'NOUN');
         if ($status === VocabularyStatus::KNOWN) {
             $item->markKnown();
+        } elseif ($status !== VocabularyStatus::UNKNOWN) {
+            $item->applyLearningStatus($status);
         }
 
         $this->entityManager->persist($item);

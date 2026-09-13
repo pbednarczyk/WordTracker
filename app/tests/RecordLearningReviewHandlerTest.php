@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests;
 
 use App\Application\RecordLearningReviewHandler;
+use App\Application\VocabularyLearningStatusEvaluator;
 use App\Clock\ClockInterface;
 use App\Entity\LearningCard;
 use App\Entity\Publication;
@@ -13,6 +14,7 @@ use App\Entity\VocabularyItem;
 use App\Enum\LearningCardType;
 use App\Enum\PublicationType;
 use App\Enum\ReviewRating;
+use App\Enum\VocabularyStatus;
 use App\Fsrs\FsrsScheduleResult;
 use App\Fsrs\FsrsSchedulerInterface;
 use App\Repository\LearningReviewRepository;
@@ -50,6 +52,7 @@ final class RecordLearningReviewHandlerTest extends KernelTestCase
             $this->learningReviewRepository,
             new FixedClock($now),
             new FakeFsrsScheduler(),
+            new VocabularyLearningStatusEvaluator($this->entityManager->getConnection()),
         );
 
         $review = $handler->record(
@@ -74,6 +77,7 @@ final class RecordLearningReviewHandlerTest extends KernelTestCase
             $this->learningReviewRepository,
             new FixedClock($now),
             new FakeFsrsScheduler(),
+            new VocabularyLearningStatusEvaluator($this->entityManager->getConnection()),
         );
 
         $first = $handler->record(
@@ -106,6 +110,7 @@ final class RecordLearningReviewHandlerTest extends KernelTestCase
             $this->learningReviewRepository,
             new FixedClock($now),
             $scheduler,
+            new VocabularyLearningStatusEvaluator($this->entityManager->getConnection()),
         );
 
         $handler->record(
@@ -134,6 +139,7 @@ final class RecordLearningReviewHandlerTest extends KernelTestCase
             $this->learningReviewRepository,
             new FixedClock($now),
             $scheduler,
+            new VocabularyLearningStatusEvaluator($this->entityManager->getConnection()),
         );
 
         $handler->record($card, ReviewRating::GOOD, '550e8400-e29b-41d4-a716-446655440002', 1, $now);
@@ -143,6 +149,7 @@ final class RecordLearningReviewHandlerTest extends KernelTestCase
         self::assertSame(1, $this->learningReviewRepository->count([]));
         self::assertSame(1, $scheduler->calls);
         self::assertEquals($nextReviewAt, $card->getNextReviewAt());
+        self::assertSame(VocabularyStatus::LEARNING, $card->getVocabularyItem()->getStatus());
     }
 
     public function testFsrsFailureRollsBackReview(): void
@@ -154,6 +161,7 @@ final class RecordLearningReviewHandlerTest extends KernelTestCase
             $this->learningReviewRepository,
             new FixedClock($now),
             new ThrowingFsrsScheduler(),
+            new VocabularyLearningStatusEvaluator($this->entityManager->getConnection()),
         );
 
         $this->expectException(\RuntimeException::class);

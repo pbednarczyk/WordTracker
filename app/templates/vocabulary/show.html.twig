@@ -10,7 +10,7 @@
                 POS: {{ item.partOfSpeech }}
                 &nbsp; Language: {{ item.language }}
                 &nbsp; Status:
-                <span class="badge {{ item.status.value == 'KNOWN' ? 'badge--known' : 'badge--unknown' }}">
+                <span class="badge badge--{{ item.status.value|lower }}">
                     {{ item.status.value }}
                 </span>
             </p>
@@ -18,7 +18,7 @@
         <form method="post" action="{{ path('vocabulary_status_update', { id: item.id }) }}">
             <input type="hidden" name="_token" value="{{ csrf_token('vocabulary_status_' ~ item.id) }}">
             <input type="hidden" name="redirectTo" value="vocabulary">
-            {% if item.status.value == 'KNOWN' %}
+            {% if item.status.isKnownForCoverage() %}
                 <button class="button" type="submit" name="status" value="UNKNOWN">Mark UNKNOWN</button>
             {% else %}
                 <button class="button" type="submit" name="status" value="KNOWN">Mark KNOWN</button>

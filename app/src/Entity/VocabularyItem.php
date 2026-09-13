@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Enum\KnowledgeStatusOrigin;
 use App\Enum\VocabularyStatus;
 use App\Repository\VocabularyItemRepository;
 use Doctrine\Common\Collections\ArrayCollection;
@@ -33,6 +34,9 @@ class VocabularyItem
 
     #[ORM\Column(length: 16, enumType: VocabularyStatus::class)]
     private VocabularyStatus $status = VocabularyStatus::UNKNOWN;
+
+    #[ORM\Column(length: 16, enumType: KnowledgeStatusOrigin::class, nullable: true)]
+    private ?KnowledgeStatusOrigin $knowledgeStatusOrigin = null;
 
     #[ORM\Column]
     private \DateTimeImmutable $createdAt;
@@ -91,15 +95,44 @@ class VocabularyItem
         return $this->status;
     }
 
+    public function getKnowledgeStatusOrigin(): ?KnowledgeStatusOrigin
+    {
+        return $this->knowledgeStatusOrigin;
+    }
+
+    public function isManualKnown(): bool
+    {
+        return $this->status === VocabularyStatus::KNOWN
+            && $this->knowledgeStatusOrigin === KnowledgeStatusOrigin::MANUAL;
+    }
+
     public function markKnown(): void
     {
         $this->status = VocabularyStatus::KNOWN;
+        $this->knowledgeStatusOrigin = KnowledgeStatusOrigin::MANUAL;
         $this->touch();
     }
 
     public function markUnknown(): void
     {
         $this->status = VocabularyStatus::UNKNOWN;
+        $this->knowledgeStatusOrigin = null;
+        $this->touch();
+    }
+
+    public function applyLearningStatus(VocabularyStatus $status): void
+    {
+        if ($this->isManualKnown()) {
+            return;
+        }
+
+        if ($status === VocabularyStatus::UNKNOWN) {
+            $this->markUnknown();
+            return;
+        }
+
+        $this->status = $status;
+        $this->knowledgeStatusOrigin = KnowledgeStatusOrigin::LEARNING;
         $this->touch();
     }
 

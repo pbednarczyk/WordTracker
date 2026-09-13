@@ -56,6 +56,7 @@ final readonly class VocabularyStatusManager
         match ($status) {
             VocabularyStatus::KNOWN => $item->markKnown(),
             VocabularyStatus::UNKNOWN => $item->markUnknown(),
+            default => throw new \InvalidArgumentException('Manual status updates only support KNOWN and UNKNOWN.'),
         };
     }
 }

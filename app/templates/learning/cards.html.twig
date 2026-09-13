@@ -157,7 +157,7 @@
                                 {% endif %}
                             </td>
                             <td>
-                                <span class="badge {{ card.vocabularyItem.status.value == 'KNOWN' ? 'badge--known' : 'badge--unknown' }}">{{ card.vocabularyItem.status.value }}</span>
+                                <span class="badge badge--{{ card.vocabularyItem.status.value|lower }}">{{ card.vocabularyItem.status.value }}</span>
                                 <span class="badge {{ card.active ? 'badge--known' : 'badge--unknown' }}">{{ card.active ? 'ACTIVE' : 'INACTIVE' }}</span>
                             </td>
                             <td>

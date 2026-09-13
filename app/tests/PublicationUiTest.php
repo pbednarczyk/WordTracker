@@ -905,7 +905,7 @@ final class PublicationUiTest extends WebTestCase
         self::assertSelectorTextContains('body', 'Learning card deactivated.');
     }
 
-    public function testStudyModeShowsFrontRevealBackAndRecordsReviewWithoutChangingStatus(): void
+    public function testStudyModeShowsFrontRevealBackRecordsReviewAndStartsLearning(): void
     {
         $publication = $this->publicationWithGeneratedForwardCards(['alpha', 'beta']);
         $first = $this->entityManager->getRepository(VocabularyItem::class)->findOneBy(['lemma' => 'alpha']);
@@ -926,7 +926,7 @@ final class PublicationUiTest extends WebTestCase
         $this->client->submit($crawler->selectButton('Good')->form());
         $this->client->followRedirect();
         self::assertSelectorTextContains('body', 'Session complete');
-        self::assertSame('UNKNOWN', $this->vocabularyStatus($first));
+        self::assertSame('LEARNING', $this->vocabularyStatus($first));
         self::assertSame(1, $this->countRows('learning_review'));
 
         $review = $this->entityManager->getRepository(LearningReview::class)->findOneBy([]);
@@ -1248,6 +1248,7 @@ final class PublicationUiTest extends WebTestCase
             'meaning_in_context',
             'simple_example',
             'cefr_level',
+            'model',
             'first_context_sentence',
         ], $rows[0]);
         self::assertSame(['reluctant', 'ADJ', 'UNKNOWN', '2', 'en'], array_slice($rows[1], 0, 5));
@@ -1256,10 +1257,12 @@ final class PublicationUiTest extends WebTestCase
         self::assertSame('existing contextual meaning', $rows[1][7]);
         self::assertSame('She was reluctant to speak.', $rows[1][8]);
         self::assertSame('B2', $rows[1][9]);
-        self::assertSame('The reluctant hero waited.', $rows[1][10]);
+        self::assertSame('fake', $rows[1][10]);
+        self::assertSame('The reluctant hero waited.', $rows[1][11]);
         self::assertSame(['hero', 'NOUN', 'KNOWN', '1', 'en'], array_slice($rows[2], 0, 5));
         self::assertSame('', $rows[2][5]);
-        self::assertSame('The reluctant hero waited.', $rows[2][10]);
+        self::assertSame('', $rows[2][10]);
+        self::assertSame('The reluctant hero waited.', $rows[2][11]);
     }
 
     public function testPublicationVocabularyCsvExportRespectsStatusFilter(): void

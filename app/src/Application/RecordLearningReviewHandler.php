@@ -22,6 +22,7 @@ final readonly class RecordLearningReviewHandler
         private LearningReviewRepository $learningReviewRepository,
         private ClockInterface $clock,
         private FsrsSchedulerInterface $fsrsScheduler,
+        private VocabularyLearningStatusEvaluator $vocabularyLearningStatusEvaluator,
     ) {
     }
 
@@ -67,6 +68,12 @@ final readonly class RecordLearningReviewHandler
 
                 $this->entityManager->persist($review);
                 $this->entityManager->flush();
+
+                $newStatus = $this->vocabularyLearningStatusEvaluator->evaluateAfterReview($card->getVocabularyItem(), $rating);
+                if ($newStatus !== null && $newStatus !== $card->getVocabularyItem()->getStatus()) {
+                    $card->getVocabularyItem()->applyLearningStatus($newStatus);
+                    $this->entityManager->flush();
+                }
 
                 return $review;
             });

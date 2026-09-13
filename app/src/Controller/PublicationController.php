@@ -128,6 +128,7 @@ final class PublicationController extends AbstractController
             'paginationPages' => $this->paginationPages($paginatedVocabulary->page, $paginatedVocabulary->totalPages),
             'perPageOptions' => PublicationVocabularyQuery::PER_PAGE_OPTIONS,
             'posOptions' => PartOfSpeech::VALUES,
+            'statuses' => VocabularyStatus::cases(),
             'exportParams' => ['id' => $publication->getId()] + $query->toUrlParameters(includePagination: false),
             'hiddenTableState' => $query->toHiddenFields(),
             'textPreview' => $this->preview($publication->getRawText()),
@@ -365,7 +366,7 @@ final class PublicationController extends AbstractController
         }
 
         $status = VocabularyStatus::tryFrom((string) $request->request->get('status'));
-        if ($status === null) {
+        if ($status === null || !in_array($status, [VocabularyStatus::KNOWN, VocabularyStatus::UNKNOWN], true)) {
             $this->addFlash('error', 'Invalid vocabulary status.');
 
             return $this->redirectAfterVocabularyStatusUpdate($request, $item);
@@ -386,7 +387,7 @@ final class PublicationController extends AbstractController
         }
 
         $status = VocabularyStatus::tryFrom((string) $request->request->get('status'));
-        if ($status === null) {
+        if ($status === null || !in_array($status, [VocabularyStatus::KNOWN, VocabularyStatus::UNKNOWN], true)) {
             $this->addFlash('error', 'Invalid vocabulary status.');
 
             return $this->redirectToPublicationFromRequest($request);

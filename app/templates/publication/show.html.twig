@@ -84,8 +84,9 @@
                     <label>
                         Status
                         <select name="status">
-                            {% for label, value in { 'All': 'all', 'Unknown': 'unknown', 'Known': 'known' } %}
-                                <option value="{{ value }}" {{ filters.status == value ? 'selected' : '' }}>{{ label }}</option>
+                            <option value="all" {{ filters.status == 'all' ? 'selected' : '' }}>All</option>
+                            {% for status in statuses %}
+                                <option value="{{ status.value|lower }}" {{ filters.status == status.value|lower ? 'selected' : '' }}>{{ status.value }}</option>
                             {% endfor %}
                         </select>
                     </label>
@@ -198,7 +199,7 @@
                                 <td>{{ item.partOfSpeech }}</td>
                                 <td>{{ row.occurrences }}</td>
                                 <td>
-                                    <span class="badge {{ item.status.value == 'KNOWN' ? 'badge--known' : 'badge--unknown' }}">
+                                    <span class="badge badge--{{ item.status.value|lower }}">
                                         {{ item.status.value }}
                                     </span>
                                 </td>
@@ -221,7 +222,7 @@
                                             {% for name, value in hiddenTableState %}
                                                 <input type="hidden" name="{{ name }}" value="{{ value }}">
                                             {% endfor %}
-                                            {% if item.status.value == 'KNOWN' %}
+                                            {% if item.status.isKnownForCoverage() %}
                                                 <button class="button button--small" type="submit" name="status" value="UNKNOWN">Mark UNKNOWN</button>
                                             {% else %}
                                                 <button class="button button--small" type="submit" name="status" value="KNOWN">Mark KNOWN</button>

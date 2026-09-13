@@ -58,21 +58,39 @@ publication's previous analysis rows without duplicating vocabulary entries or
 resetting global vocabulary statuses. Context-specific AI enrichment is kept
 when the same vocabulary item still appears in the publication after re-analysis.
 
-`VocabularyItem.status` is global. When a word is marked `KNOWN` in one
-publication, every other publication using the same `language + lemma +
-partOfSpeech` vocabulary item shows it as `KNOWN` immediately.
+`VocabularyItem.status` is global. When a word changes status in one publication,
+every other publication using the same `language + lemma + partOfSpeech`
+vocabulary item shows the same status immediately.
+
+Vocabulary can move through this learning lifecycle:
+
+- `UNKNOWN`: not yet known through WordTracker.
+- `LEARNING`: at least one successful study review has started learning.
+- `KNOWN`: repeated successful recall plus FSRS stability/interval evidence show
+  reasonably stable knowledge.
+- `MATURE`: stronger long-term FSRS stability/interval evidence.
+- `LAPSED`: a previously auto-learned `KNOWN` or `MATURE` word was rated
+  `AGAIN` and needs relearning.
+
+FSRS scheduling remains card-level and answers when a `LearningCard` should be
+reviewed next. Vocabulary lifecycle is item-level and uses active cards' review
+history plus stored FSRS state as evidence. Manually marking a word `KNOWN` is
+authoritative; automatic learning will not lapse it. Manually marking a word
+`UNKNOWN` resets the declared knowledge state and lets automatic learning start
+again from study reviews.
 
 Publication details show two coverage metrics:
 
-- Vocabulary Coverage: percent of unique publication vocabulary items marked
-  `KNOWN`.
+- Vocabulary Coverage: percent of unique publication vocabulary items whose
+  status is `KNOWN` or `MATURE`.
 - Text Coverage: percent of actual vocabulary occurrences belonging to `KNOWN`
-  vocabulary.
+  or `MATURE` vocabulary.
 
 These metrics intentionally measure different things. A frequent word can move
 Text Coverage much more than Vocabulary Coverage because Text Coverage is
 weighted by occurrence counts. Coverage is shown as `N/A` when a publication has
-no vocabulary rows.
+no vocabulary rows. `UNKNOWN`, `LEARNING`, and `LAPSED` vocabulary does not count
+as known for coverage.
 
 Publication vocabulary exports respect the active `status` and `q` filters.
 Both CSV and XLSX include:
