@@ -599,9 +599,10 @@ Its `generate(prompt, format_schema, options)` method returns raw model text;
 provider/model properties supply response metadata. `OllamaClient` implements
 only generic HTTP generation and is selected by the FastAPI dependency factory.
 Execution remains synchronous, with temperature `0.2` and one repair attempt.
-RabbitMQ and an external worker are not implemented in this phase. Domain
-parsing errors now say “LLM”; HTTP status mappings and Ollama transport errors
-are unchanged.
+Phase 2 adds separate, opt-in [asynchronous LLM job infrastructure](docs/llm-jobs.md)
+through RabbitMQ on DEXTER (`/wordtracker`, `llm.jobs`, `llm.results`). It does not
+change `/enrich` or Symfony enrichment. Domain parsing errors say “LLM”; HTTP
+status mappings and Ollama transport errors are unchanged.
 
 The endpoint supports English to Polish. It calls Ollama with structured output
 JSON Schema, parses the generated `response` field, validates it with Pydantic,
@@ -623,6 +624,20 @@ Swagger UI is available at:
 ```text
 http://localhost:8000/docs
 ```
+
+### Internal LLM Job Diagnostics (Phase 2)
+
+`POST /internal/llm/jobs` accepts generic `model`, `prompt`, `format`, and `options`
+and returns HTTP 202 with `job_id` and `status: "queued"` after RabbitMQ confirms
+publication. It is disabled by default (`RABBITMQ_ENABLED=false`) and requires
+`X-LLM-Jobs-Token` matching the environment secret `LLM_JOBS_API_TOKEN` when enabled.
+It never waits for model execution. Results are validated and stored by a
+separate consumer CLI; there is no application job/status workflow yet.
+
+See [contracts, configuration, external worker changes, reliability limits, and
+manual test instructions](docs/llm-jobs.md). The root `.env.example` lists all
+settings without credentials. Existing synchronous development requires no
+RabbitMQ connection or secrets.
 
 ## Bruno API Collection
 
@@ -653,6 +668,7 @@ Current requests:
 - `NLP / Health`: `GET {{nlpBaseUrl}}/health`
 - `NLP / Analyze`: `POST {{nlpBaseUrl}}/analyze`
 - `NLP / Enrich Vocabulary`: `POST {{nlpBaseUrl}}/enrich`
+- `NLP / Submit Internal LLM Job`: `POST {{nlpBaseUrl}}/internal/llm/jobs` (opt-in; set `llmJobsApiToken` locally as a secret)
 - `App / Remove Publication Vocabulary`: `POST {{appBaseUrl}}/publication-vocabulary/:id/remove`
 
 The NLP requests include assertions for the current response contract. The app

@@ -1,0 +1,52 @@
+meta {
+  name: Submit Internal LLM Job
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{nlpBaseUrl}}/internal/llm/jobs
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  X-LLM-Jobs-Token: {{llmJobsApiToken}}
+}
+
+body:json {
+  {
+    "model": "qwen3:14b",
+    "prompt": "Return a JSON object with a short greeting in the answer field.",
+    "format": {
+      "type": "object",
+      "properties": {"answer": {"type": "string"}},
+      "required": ["answer"],
+      "additionalProperties": false
+    },
+    "options": {"temperature": 0.2}
+  }
+}
+
+assert {
+  res.status: eq 202
+  res.body.status: eq queued
+  res.body.job_id: isString
+  res.body.job_id: isNotEmpty
+}
+
+tests {
+  test("submission returns only the queued job identity", function() {
+    const body = res.getBody();
+    expect(body).to.have.all.keys("job_id", "status");
+    expect(body.job_id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+  });
+}
+
+docs {
+  Phase 2 internal diagnostics. Requires RABBITMQ_ENABLED=true and a local secret
+  environment variable llmJobsApiToken matching LLM_JOBS_API_TOKEN. Do not commit
+  the token. 202 means broker-confirmed submission, not completed generation.
+  Results are read by the independent NLP result consumer; see docs/llm-jobs.md.
+}

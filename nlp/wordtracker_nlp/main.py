@@ -7,10 +7,12 @@ from wordtracker_nlp.enrichment_validation import EnrichmentValidationError, val
 from wordtracker_nlp.models import AnalyzeRequest, AnalyzeResponse, EnrichRequest, EnrichResponse, MAX_TEXT_BYTES
 from wordtracker_nlp.enrichment import Enrichment, PROMPT_VERSION, generate_enrichment, repair_simple_example
 from wordtracker_nlp.llm import LlmGenerationClient
+from wordtracker_nlp.llm_jobs_api import router as llm_jobs_router
 from wordtracker_nlp.ollama import OllamaClient
 
 analyzer = TextAnalyzer.from_model("en_core_web_sm")
 app = FastAPI(title="WordTracker NLP")
+app.include_router(llm_jobs_router)
 logger = logging.getLogger(__name__)
 MAX_REPAIR_ATTEMPTS = 1
 

@@ -21,3 +21,6 @@ pnpm-debug.log*
 !.vscode/
 !.vscode/launch.json
 .DS_Store
+
+# Temporary Phase 2 LLM diagnostic results
+/nlp/.llm-results/

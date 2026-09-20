@@ -108,6 +108,15 @@ services:
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma3}
       OLLAMA_TIMEOUT_SECONDS: "120"
+      RABBITMQ_ENABLED: ${RABBITMQ_ENABLED:-false}
+      RABBITMQ_HOST: ${RABBITMQ_HOST:-dexter}
+      RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
+      RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/wordtracker}
+      RABBITMQ_USER: ${RABBITMQ_USER:-wordtracker}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD:-}
+      LLM_JOBS_QUEUE: ${LLM_JOBS_QUEUE:-llm.jobs}
+      LLM_RESULTS_QUEUE: ${LLM_RESULTS_QUEUE:-llm.results}
+      LLM_JOBS_API_TOKEN: ${LLM_JOBS_API_TOKEN:-}
     volumes:
       - ./nlp:/srv/nlp
       - ./fixtures:/srv/fixtures:ro
