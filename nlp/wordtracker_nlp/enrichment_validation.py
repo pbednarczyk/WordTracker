@@ -5,7 +5,7 @@ from wordtracker_nlp.analyzer import TextAnalyzer
 from wordtracker_nlp.models import EnrichRequest
 
 if TYPE_CHECKING:
-    from wordtracker_nlp.ollama import OllamaEnrichment
+    from wordtracker_nlp.enrichment import Enrichment
 
 TARGET_NOT_PRESENT = "TARGET_NOT_PRESENT"
 
@@ -32,7 +32,7 @@ class EnrichmentValidationError(Exception):
 
 def validate_simple_example_contains_target(
     request: EnrichRequest,
-    enrichment: "OllamaEnrichment",
+    enrichment: "Enrichment",
     analyzer: TextAnalyzer,
 ) -> None:
     validate_enrichment(request, enrichment, analyzer)
@@ -40,7 +40,7 @@ def validate_simple_example_contains_target(
 
 def validate_enrichment(
     request: EnrichRequest,
-    enrichment: "OllamaEnrichment",
+    enrichment: "Enrichment",
     analyzer: TextAnalyzer,
 ) -> None:
     target_lemma = request.lemma.strip().lower()

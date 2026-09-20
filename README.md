@@ -592,6 +592,17 @@ Response shape:
 }
 ```
 
+Internally, enrichment prompts, schemas, response parsing, and prompt versions
+live in `nlp/wordtracker_nlp/enrichment.py`. Validation and repair decisions stay
+in NLP and use the provider-neutral `LlmGenerationClient` protocol (`llm.py`).
+Its `generate(prompt, format_schema, options)` method returns raw model text;
+provider/model properties supply response metadata. `OllamaClient` implements
+only generic HTTP generation and is selected by the FastAPI dependency factory.
+Execution remains synchronous, with temperature `0.2` and one repair attempt.
+RabbitMQ and an external worker are not implemented in this phase. Domain
+parsing errors now say “LLM”; HTTP status mappings and Ollama transport errors
+are unchanged.
+
 The endpoint supports English to Polish. It calls Ollama with structured output
 JSON Schema, parses the generated `response` field, validates it with Pydantic,
 and returns controlled HTTP errors if Ollama is unavailable, times out, has no

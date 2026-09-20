@@ -3,9 +3,11 @@ import logging
 from fastapi import Depends, FastAPI, HTTPException
 
 from wordtracker_nlp.analyzer import TextAnalyzer
-from wordtracker_nlp.enrichment_validation import EnrichmentValidationError, ValidationIssue, validate_enrichment
+from wordtracker_nlp.enrichment_validation import EnrichmentValidationError, validate_enrichment
 from wordtracker_nlp.models import AnalyzeRequest, AnalyzeResponse, EnrichRequest, EnrichResponse, MAX_TEXT_BYTES
-from wordtracker_nlp.ollama import OllamaEnrichment, PROMPT_VERSION, OllamaClient
+from wordtracker_nlp.enrichment import Enrichment, PROMPT_VERSION, generate_enrichment, repair_simple_example
+from wordtracker_nlp.llm import LlmGenerationClient
+from wordtracker_nlp.ollama import OllamaClient
 
 analyzer = TextAnalyzer.from_model("en_core_web_sm")
 app = FastAPI(title="WordTracker NLP")
@@ -13,7 +15,7 @@ logger = logging.getLogger(__name__)
 MAX_REPAIR_ATTEMPTS = 1
 
 
-def get_ollama_client() -> OllamaClient:
+def get_llm_client() -> LlmGenerationClient:
     return OllamaClient()
 
 
@@ -37,12 +39,12 @@ def analyze(request: AnalyzeRequest) -> AnalyzeResponse:
 
 
 @app.post("/enrich", response_model=EnrichResponse)
-def enrich(request: EnrichRequest, ollama_client: OllamaClient = Depends(get_ollama_client)) -> EnrichResponse:
+def enrich(request: EnrichRequest, llm_client: LlmGenerationClient = Depends(get_llm_client)) -> EnrichResponse:
     if request.source_language != "en" or request.target_language != "pl":
         raise HTTPException(status_code=422, detail="Only English to Polish enrichment is supported.")
 
     try:
-        enrichment = ollama_client.generate_enrichment(request)
+        enrichment = generate_enrichment(llm_client, request)
     except TimeoutError as exc:
         raise HTTPException(status_code=504, detail=str(exc)) from exc
     except ConnectionError as exc:
@@ -53,7 +55,7 @@ def enrich(request: EnrichRequest, ollama_client: OllamaClient = Depends(get_oll
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
     try:
-        enrichment = validate_or_repair_enrichment(request, enrichment, ollama_client)
+        enrichment = validate_or_repair_enrichment(request, enrichment, llm_client)
     except EnrichmentValidationError as exc:
         issue = exc.issues[0]
         raise HTTPException(
@@ -78,17 +80,17 @@ def enrich(request: EnrichRequest, ollama_client: OllamaClient = Depends(get_oll
         meaning_in_context=enrichment.meaning_in_context,
         simple_example=enrichment.simple_example,
         cefr_level=enrichment.cefr_level,
-        provider="ollama",
-        model=ollama_client.config.model,
+        provider=llm_client.provider,
+        model=llm_client.model,
         prompt_version=PROMPT_VERSION,
     )
 
 
 def validate_or_repair_enrichment(
     request: EnrichRequest,
-    enrichment: OllamaEnrichment,
-    ollama_client: OllamaClient,
-) -> OllamaEnrichment:
+    enrichment: Enrichment,
+    llm_client: LlmGenerationClient,
+) -> Enrichment:
     try:
         validate_enrichment(request, enrichment, analyzer)
         return enrichment
@@ -110,7 +112,8 @@ def validate_or_repair_enrichment(
 
     current_enrichment = enrichment
     for attempt in range(1, MAX_REPAIR_ATTEMPTS + 1):
-        repaired_simple_example = ollama_client.repair_simple_example(
+        repaired_simple_example = repair_simple_example(
+            client=llm_client,
             request=request,
             enrichment=current_enrichment,
             validation_issue=issue,

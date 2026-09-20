@@ -42,6 +42,12 @@ assert {
 }
 
 tests {
+  test("response contains the complete enrichment contract", function() {
+    expect(res.getBody()).to.have.all.keys(
+      "translation_pl", "definition_en", "meaning_in_context", "simple_example",
+      "cefr_level", "provider", "model", "prompt_version"
+    );
+  });
   test("cefr_level is a valid CEFR value or null", function() {
     const body = res.getBody();
     expect(["A1", "A2", "B1", "B2", "C1", "C2", null]).to.include(body.cefr_level);
