@@ -1,10 +1,14 @@
 parameters:
+    env(ASYNC_ENRICHMENT_ENABLED): 'false'
+    env(ENRICHMENT_INTERNAL_TOKEN): ''
 
 services:
     _defaults:
         autowire: true
         autoconfigure: true
         bind:
+            bool $asyncEnrichmentEnabled: '%env(bool:ASYNC_ENRICHMENT_ENABLED)%'
+            string $enrichmentInternalToken: '%env(ENRICHMENT_INTERNAL_TOKEN)%'
             string $nlpHealthUrl: '%env(NLP_HEALTH_URL)%'
             string $nlpBaseUrl: '%env(NLP_BASE_URL)%'
             string $vocabularyEnrichmentBaseUrl: '%env(VOCABULARY_ENRICHMENT_BASE_URL)%'
@@ -28,3 +32,6 @@ services:
 
     App\Enrichment\VocabularyEnrichmentProviderInterface:
         alias: App\Enrichment\HttpVocabularyEnrichmentProvider
+
+    App\Enrichment\AsyncEnrichmentGatewayInterface:
+        alias: App\Enrichment\HttpAsyncEnrichmentGateway

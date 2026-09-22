@@ -1,0 +1,34 @@
+meta {
+  name: Generate Publication Vocabulary Enrichment
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{appBaseUrl}}/publication-vocabulary/{{publicationVocabularyId}}/enrichment
+  body: form-urlencoded
+  auth: none
+}
+
+body:form-urlencoded {
+  _token: {{enrichmentCsrfToken}}
+}
+
+settings {
+  followRedirects: false
+}
+
+assert {
+  res.status: eq 303
+  res.headers.location: isString
+}
+
+docs {
+  CSRF-protected existing single-item form action. Use the session cookie and hidden
+  token from the matching vocabulary detail form; set publicationVocabularyId and
+  enrichmentCsrfToken locally. Invalid CSRF returns 403.
+  ASYNC_ENRICHMENT_ENABLED=true creates a durable application job and returns after
+  preparation/publication, without awaiting inference. Refresh the redirected page
+  for QUEUED/PROCESSING/FAILED/COMPLETED state. Failures are shown on that page.
+  With the flag false, existing synchronous behavior is preserved. Bulk is unchanged.
+}

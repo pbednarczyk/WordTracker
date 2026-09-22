@@ -8,6 +8,7 @@ from wordtracker_nlp.llm import LlmGenerationClient
 from wordtracker_nlp.models import CefrLevel, EnrichRequest
 
 PROMPT_VERSION = "word-enrichment-v4"
+GENERATION_OPTIONS = {"temperature": 0.2}
 
 ENRICHMENT_FORMAT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -105,7 +106,7 @@ def generate_enrichment(client: LlmGenerationClient, request: EnrichRequest) -> 
     model_response = client.generate(
         prompt=build_enrichment_prompt(request),
         format_schema=ENRICHMENT_FORMAT_SCHEMA,
-        options={"temperature": 0.2},
+        options=GENERATION_OPTIONS.copy(),
     )
 
     return Enrichment.from_model_response(model_response)
@@ -120,7 +121,7 @@ def repair_simple_example(
     model_response = client.generate(
         prompt=build_simple_example_repair_prompt(request, enrichment, validation_issue),
         format_schema=REPAIRED_SIMPLE_EXAMPLE_FORMAT_SCHEMA,
-        options={"temperature": 0.2},
+        options=GENERATION_OPTIONS.copy(),
     )
 
     return RepairedSimpleExample.from_model_response(model_response).simple_example

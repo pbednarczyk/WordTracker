@@ -1,0 +1,50 @@
+meta {
+  name: Apply Async Enrichment Result
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{appBaseUrl}}/internal/enrichment/results
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  X-Enrichment-Token: {{enrichmentInternalToken}}
+  X-LLM-Correlation-ID: 00000000-0000-4000-8000-000000000001
+}
+
+body:json {
+  {
+    "schema_version": 1,
+    "type": "llm.generate.result",
+    "job_id": "00000000-0000-4000-8000-000000000001",
+    "model": "qwen3:14b",
+    "status": "completed",
+    "response": "{\"translation_pl\": \"gotowość\", \"definition_en\": \"being ready\", \"meaning_in_context\": \"readiness to help\", \"simple_example\": \"Her willingness helped.\", \"cefr_level\": \"B2\"}",
+    "worker": "manual-contract-example",
+    "completed_at": "2026-09-23T00:00:00Z",
+    "error": null
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.disposition: isString
+}
+
+tests {
+  test("application confirms a durable disposition", function () {
+    expect(["applied", "ignored"]).to.include(res.getBody().disposition);
+  });
+}
+
+docs {
+  Authenticated consumer callback; normally sent only by wordtracker_nlp.enrichment_results.
+  Replace job_id and X-LLM-Correlation-ID together with the active UUID of a test application job.
+  Unknown/duplicate UUIDs return ignored. Known active results are applied only after durable transitions.
+  200 disposition applied or ignored; 400 invalid/uncorrelated envelope; 401 invalid token; 503 configuration/application unavailable.
+  Never inject a fabricated result into a real user's pending job.
+}

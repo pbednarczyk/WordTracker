@@ -6,87 +6,46 @@ namespace App\Application;
 
 use App\Entity\PublicationVocabulary;
 use App\Entity\PublicationVocabularyEnrichment;
+use App\Enrichment\EnrichmentRequestFactory;
+use App\Enrichment\EnrichmentPersister;
 use App\Enrichment\VocabularyEnrichmentException;
 use App\Enrichment\VocabularyEnrichmentProviderInterface;
-use App\Enrichment\VocabularyEnrichmentRequest;
-use App\Repository\VocabularyOccurrenceRepository;
+use Doctrine\DBAL\LockMode;
 use Doctrine\ORM\EntityManagerInterface;
 
 final readonly class EnrichPublicationVocabularyHandler
 {
-    private const PROMPT_VERSION = 'word-enrichment-v1';
-
     public function __construct(
-        private VocabularyOccurrenceRepository $vocabularyOccurrenceRepository,
+        private EnrichmentRequestFactory $requests,
+        private EnrichmentPersister $persister,
         private VocabularyEnrichmentProviderInterface $provider,
         private EntityManagerInterface $entityManager,
-    ) {
-    }
+    ) {}
 
     public function __invoke(PublicationVocabulary $publicationVocabulary): PublicationVocabularyEnrichment
     {
-        if ($publicationVocabulary->isDeleted()) {
-            throw new VocabularyEnrichmentException('Cannot generate enrichment for removed publication vocabulary.');
-        }
-
-        $publication = $publicationVocabulary->getPublication();
-        $item = $publicationVocabulary->getVocabularyItem();
-        if ($publication->getLanguage() !== 'en' || $item->getLanguage() !== 'en') {
-            throw new VocabularyEnrichmentException('AI enrichment currently supports English source vocabulary only.');
-        }
-
-        $occurrence = $this->vocabularyOccurrenceRepository->findRepresentativeForPublicationVocabulary($publicationVocabulary);
-        if ($occurrence === null) {
-            throw new VocabularyEnrichmentException('Cannot generate enrichment because no occurrence is available.');
-        }
-
-        $sourceSentence = trim((string) $occurrence->getSentence());
-        if ($sourceSentence === '') {
-            throw new VocabularyEnrichmentException('Cannot generate enrichment because the occurrence has no context sentence.');
-        }
-
-        $result = $this->provider->enrich(new VocabularyEnrichmentRequest(
-            lemma: $item->getLemma(),
-            partOfSpeech: $item->getPartOfSpeech(),
-            originalForm: $occurrence->getOriginalForm(),
-            contextSentence: $sourceSentence,
-            sourceLanguage: 'en',
-            targetLanguage: 'pl',
-        ));
-
-        return $this->entityManager->wrapInTransaction(function () use ($publicationVocabulary, $result, $sourceSentence): PublicationVocabularyEnrichment {
-            $enrichment = $publicationVocabulary->getEnrichment();
-            if ($enrichment === null) {
-                $enrichment = new PublicationVocabularyEnrichment(
-                    publicationVocabulary: $publicationVocabulary,
-                    translationPl: $result->translationPl,
-                    definitionEn: $result->definitionEn,
-                    meaningInContext: $result->meaningInContext,
-                    simpleExample: $result->simpleExample,
-                    cefrLevel: $result->cefrLevel,
-                    sourceSentence: $sourceSentence,
-                    provider: $result->provider,
-                    model: $result->model,
-                    promptVersion: $result->promptVersion ?? self::PROMPT_VERSION,
-                );
-                $this->entityManager->persist($enrichment);
-            } else {
-                $enrichment->update(
-                    translationPl: $result->translationPl,
-                    definitionEn: $result->definitionEn,
-                    meaningInContext: $result->meaningInContext,
-                    simpleExample: $result->simpleExample,
-                    cefrLevel: $result->cefrLevel,
-                    sourceSentence: $sourceSentence,
-                    provider: $result->provider,
-                    model: $result->model,
-                    promptVersion: $result->promptVersion ?? self::PROMPT_VERSION,
-                );
-            }
-
-            $this->entityManager->flush();
-
-            return $enrichment;
+        // Expected eligibility failures must not close Doctrine's entity manager
+        // while the unchanged bulk action continues with other vocabulary rows.
+        $this->requests->create($publicationVocabulary);
+        [$request, $revision] = $this->entityManager->wrapInTransaction(function () use ($publicationVocabulary): array {
+            $this->entityManager->lock($publicationVocabulary, LockMode::PESSIMISTIC_WRITE);
+            $this->entityManager->refresh($publicationVocabulary);
+            $request = $this->requests->create($publicationVocabulary);
+            return [$request, $publicationVocabulary->beginEnrichmentRequest()];
         });
+        $result = $this->provider->enrich($request);
+
+        $enrichment = $this->entityManager->wrapInTransaction(function () use ($publicationVocabulary, $request, $result, $revision): ?PublicationVocabularyEnrichment {
+            $this->entityManager->lock($publicationVocabulary, LockMode::PESSIMISTIC_WRITE);
+            $this->entityManager->refresh($publicationVocabulary);
+            if ($publicationVocabulary->isDeleted() || $publicationVocabulary->getEnrichmentRevision() !== $revision) {
+                return null;
+            }
+            return $this->persister->save($publicationVocabulary, $result, $request->contextSentence);
+        });
+        if ($enrichment === null) {
+            throw new VocabularyEnrichmentException('Enrichment request was superseded or removed.');
+        }
+        return $enrichment;
     }
 }

@@ -153,6 +153,17 @@ Both CSV and XLSX include:
 - `cefr_level`
 - `first_context_sentence`
 
+## Phase 3A: asynchronous single-item enrichment
+
+An opt-in application workflow now persists enrichment jobs in Symfony/PostgreSQL,
+uses stateless NLP semantics and RabbitMQ, and applies validated results after
+remote inference. Set `ASYNC_ENRICHMENT_ENABLED=true` for the existing single-item
+Generate/Regenerate action. Bulk and `/enrich` remain synchronous.
+
+See [Phase 3A deployment, API contracts, consumer command, crash windows and manual
+end-to-end test](docs/async-enrichment.md). Stop the diagnostic FileResultStore
+consumer before starting the production result consumer on the same queue.
+
 ## AI Vocabulary Enrichment
 
 AI enrichment is stored per `PublicationVocabulary`, not directly on the global

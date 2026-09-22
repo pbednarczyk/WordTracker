@@ -99,6 +99,7 @@ def main() -> int:
     if not rabbitmq_enabled():
         logger.error("Set RABBITMQ_ENABLED=true to run the diagnostic result consumer")
         return 1
+    logger.warning("Diagnostic consumer requires the production enrichment_results consumer to be STOPPED")
     try:
         consume_results(RabbitMqConfig.from_env(), FileResultStore(args.output_dir))
     except KeyboardInterrupt:

@@ -50,6 +50,9 @@ final class PublicationController extends AbstractController
         private readonly PublicationVocabularyExporter $publicationVocabularyExporter,
         private readonly ClockInterface $clock,
         private readonly LoggerInterface $logger,
+        private readonly \App\Application\AsyncEnrichmentWorkflow $asyncEnrichment,
+        private readonly \App\Repository\PublicationVocabularyEnrichmentJobRepository $enrichmentJobs,
+        private readonly bool $asyncEnrichmentEnabled,
     ) {
     }
 
@@ -207,6 +210,10 @@ final class PublicationController extends AbstractController
         $publicationVocabulary = $this->publicationVocabularyRepository->findForVocabularyItemWithEnrichment($item);
 
         return $this->render('vocabulary/show.html.twig', [
+            'enrichmentJobs' => array_reduce($publicationVocabulary, function (array $jobs, PublicationVocabulary $row): array {
+                $jobs[$row->getId()] = $this->enrichmentJobs->latest($row);
+                return $jobs;
+            }, []),
             'item' => $item,
             'occurrences' => $this->vocabularyOccurrenceRepository->findForVocabularyItem($item),
             'publicationVocabulary' => $publicationVocabulary,
@@ -223,8 +230,16 @@ final class PublicationController extends AbstractController
         }
 
         try {
-            ($this->enrichPublicationVocabulary)($publicationVocabulary);
-            $this->addFlash('success', sprintf('Enrichment generated for "%s".', $publicationVocabulary->getVocabularyItem()->getLemma()));
+            if ($this->asyncEnrichmentEnabled) {
+                $job = $this->asyncEnrichment->submit($publicationVocabulary);
+                $failed = $job->getStatus() === \App\Enum\EnrichmentJobStatus::FAILED;
+                $this->addFlash($failed ? 'error' : 'success', $failed
+                    ? 'Enrichment could not be queued. Existing enrichment is preserved.'
+                    : ($job->isPending() ? 'Enrichment queued. Refresh this page to see the result.' : 'Enrichment completed.'));
+            } else {
+                ($this->enrichPublicationVocabulary)($publicationVocabulary);
+                $this->addFlash('success', sprintf('Enrichment generated for "%s".', $publicationVocabulary->getVocabularyItem()->getLemma()));
+            }
         } catch (VocabularyEnrichmentException $exception) {
             $this->addFlash('error', $exception->getMessage());
         }

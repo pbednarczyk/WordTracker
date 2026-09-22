@@ -15,4 +15,10 @@ final readonly class VocabularyEnrichmentRequest
         public string $targetLanguage,
     ) {
     }
+    public function toArray(): array
+    {
+        return ['lemma' => $this->lemma, 'part_of_speech' => $this->partOfSpeech,
+            'original_form' => $this->originalForm, 'context_sentence' => $this->contextSentence,
+            'source_language' => $this->sourceLanguage, 'target_language' => $this->targetLanguage];
+    }
 }

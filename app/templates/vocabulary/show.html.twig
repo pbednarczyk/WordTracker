@@ -83,6 +83,14 @@
                             </div>
                         </dialog>
 
+                        {% set enrichmentJob = enrichmentJobs[row.id] ?? null %}
+                        {% if enrichmentJob and enrichmentJob.requestRevision == row.enrichmentRevision %}
+                            <p class="muted" data-enrichment-status="{{ enrichmentJob.status.value }}">
+                                Enrichment: {{ enrichmentJob.status.value }}
+                                {% if enrichmentJob.pending %}— refresh this page to check progress.{% endif %}
+                                {% if enrichmentJob.status.value == 'FAILED' %}— {{ enrichmentJob.failure }}. Existing enrichment is preserved; Generate/Regenerate starts a new request.{% endif %}
+                            </p>
+                        {% endif %}
                         {% if enrichment %}
                             {% set cardCount = row.id ? (cardCounts[row.id] ?? 0) : 0 %}
                             <div class="learning-card-actions">

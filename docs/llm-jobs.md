@@ -1,5 +1,10 @@
 # Phase 2: asynchronous LLM infrastructure
 
+Phase 3A now adds a separate [real application enrichment workflow](async-enrichment.md).
+The diagnostic API below remains separate. **Never run its FileResultStore consumer
+alongside the production `wordtracker_nlp.enrichment_results` consumer on the same
+`llm.results` queue.** Stop diagnostics before production testing.
+
 The two paths intentionally coexist:
 
 ```text
@@ -191,7 +196,8 @@ responses use FastAPI's `detail` field and do not include broker exception text.
 
 ## External worker responsibilities (Silver Monkey changes)
 
-The existing proof of concept must be updated before the full round trip works:
+The standalone Silver Monkey worker is now independently operational. The following
+contract requirements remain the reference for that external project:
 
 1. Connect to DEXTER using environment credentials and **`/wordtracker`**. Ignore
    the old test queue in `/`. Declare both durable classic queues with the same
@@ -201,8 +207,8 @@ The existing proof of concept must be updated before the full round trip works:
    malformed job that cannot be safely correlated, log a sanitized reason and
    reject without requeue; no immediate infinite retry loop.
 3. Call its configured LLM backend with the requested model, prompt, schema and
-   options. Today that is local Ollama at
-   `http://localhost:11434/api/generate`, using non-streaming output. Backend
+   options. Today that is the worker-owned containerized Ollama `/api/generate` endpoint,
+   using non-streaming output. Its URL belongs to the standalone worker configuration. Backend
    execution remains entirely external to WordTracker's new job infrastructure.
 4. Construct a completed result with raw output, or a failed result for backend
    errors where possible. Preserve the job UUID/model, include worker identity,
@@ -290,7 +296,7 @@ Normal unit tests mock RabbitMQ and never connect to DEXTER.
    Disable diagnostics again if no longer needed; stored files contain model
    output and can be removed when the test is complete.
 
-Phase 3 and later work remains deferred: Symfony async enrichment, UI polling,
-production job persistence/idempotency, enrichment result application and repair
-jobs, worker orchestration, Wake-on-LAN/power management, retries/DLQ, and removal
-of the local Ollama service. Nothing here deploys WordTracker onto DEXTER.
+Phase 3A now implements Symfony job persistence, async single-item enrichment,
+result application and one repair stage; see the linked guide. Bulk migration,
+UI polling, orchestration/power management, retries/DLQ, and removal of the local
+Ollama service remain outside this phase. Nothing here deploys WordTracker onto DEXTER.

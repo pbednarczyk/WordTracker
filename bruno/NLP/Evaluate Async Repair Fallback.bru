@@ -1,0 +1,62 @@
+meta {
+  name: Evaluate Async Repair Fallback
+  type: http
+  seq: 8
+}
+
+post {
+  url: {{nlpBaseUrl}}/internal/enrichment/evaluate
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  X-Enrichment-Token: {{enrichmentInternalToken}}
+}
+
+body:json {
+  {
+    "request": {
+      "lemma": "willingness",
+      "part_of_speech": "NOUN",
+      "original_form": "willingness",
+      "context_sentence": "His willingness to help impressed everyone.",
+      "source_language": "en",
+      "target_language": "pl"
+    },
+    "stage": "REPAIR",
+    "model": "qwen3:14b",
+    "provider": "ollama",
+    "prompt_version": "word-enrichment-v4",
+    "candidate": {
+      "translation_pl": "gotowość",
+      "definition_en": "being ready",
+      "meaning_in_context": "readiness to help",
+      "simple_example": "She helped.",
+      "cefr_level": "B2"
+    },
+    "result": {
+      "schema_version": 1,
+      "type": "llm.generate.result",
+      "job_id": "00000000-0000-4000-8000-000000000001",
+      "model": "qwen3:14b",
+      "status": "completed",
+      "response": "{\"simple_example\":\"She helped.\"}",
+      "worker": "manual-contract-example",
+      "completed_at": "2026-09-23T00:00:00Z",
+      "error": null
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.outcome: eq COMPLETED
+  res.body.enrichment.simple_example: eq His willingness to help impressed everyone.
+}
+
+docs {
+  Demonstrates existing context fallback after a semantically invalid repair.
+  Malformed repair JSON fails; it does not trigger fallback. No publication or persistence.
+}

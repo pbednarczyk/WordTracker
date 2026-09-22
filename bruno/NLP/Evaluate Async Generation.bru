@@ -1,0 +1,59 @@
+meta {
+  name: Evaluate Async Generation
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{nlpBaseUrl}}/internal/enrichment/evaluate
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  X-Enrichment-Token: {{enrichmentInternalToken}}
+}
+
+body:json {
+  {
+    "request": {
+      "lemma": "willingness",
+      "part_of_speech": "NOUN",
+      "original_form": "willingness",
+      "context_sentence": "His willingness to help impressed everyone.",
+      "source_language": "en",
+      "target_language": "pl"
+    },
+    "stage": "GENERATE",
+    "model": "qwen3:14b",
+    "provider": "ollama",
+    "prompt_version": "word-enrichment-v4",
+    "candidate": null,
+    "result": {
+      "schema_version": 1,
+      "type": "llm.generate.result",
+      "job_id": "00000000-0000-4000-8000-000000000001",
+      "model": "qwen3:14b",
+      "status": "completed",
+      "response": "{\"translation_pl\": \"gotowość\", \"definition_en\": \"being ready\", \"meaning_in_context\": \"readiness to help\", \"simple_example\": \"Her willingness helped.\", \"cefr_level\": \"B2\"}",
+      "worker": "manual-contract-example",
+      "completed_at": "2026-09-23T00:00:00Z",
+      "error": null
+    }
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.outcome: eq COMPLETED
+  res.body.enrichment.simple_example: eq Her willingness helped.
+  res.body.enrichment.prompt_version: eq word-enrichment-v4
+}
+
+docs {
+  Stateless evaluation; no application persistence or inference.
+  outcome is COMPLETED (enrichment), REPAIR (candidate and generic job), or FAILED (safe failure code).
+  All five response keys are present; unused enrichment/candidate/job/failure are null.
+  401 invalid token; 503 missing token configuration; 422 malformed request/result envelope.
+}

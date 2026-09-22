@@ -1,0 +1,49 @@
+meta {
+  name: Prepare Async Enrichment
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{nlpBaseUrl}}/internal/enrichment/prepare
+  body: json
+  auth: none
+}
+
+headers {
+  Content-Type: application/json
+  X-Enrichment-Token: {{enrichmentInternalToken}}
+}
+
+body:json {
+  {
+    "lemma": "willingness",
+    "part_of_speech": "NOUN",
+    "original_form": "willingness",
+    "context_sentence": "His willingness to help impressed everyone.",
+    "source_language": "en",
+    "target_language": "pl"
+  }
+}
+
+assert {
+  res.status: eq 200
+  res.body.job.type: eq llm.generate
+  res.body.job.job_id: isString
+  res.body.job.options.temperature: eq 0.2
+  res.body.prompt_version: eq word-enrichment-v4
+  res.body.provider: isString
+}
+
+tests {
+  test("generic worker inputs contain no application entities", function () {
+    expect(res.getBody().job).to.have.all.keys("schema_version", "type", "job_id", "created_at", "model", "prompt", "format", "options");
+  });
+}
+
+docs {
+  Authenticated stateless preparation only: does not publish or create an application job.
+  Set enrichmentInternalToken as a local secret matching ENRICHMENT_INTERNAL_TOKEN.
+  Production workflow creates the Symfony job before this call.
+  401 invalid token; 503 missing token configuration; 422 invalid enrichment inputs.
+}

@@ -36,6 +36,12 @@ class PublicationVocabulary
     #[ORM\Column(nullable: true)]
     private ?\DateTimeImmutable $deletedAt = null;
 
+    #[ORM\Column(options: ['default' => 0])]
+    private int $enrichmentRevision = 0;
+
+    public function getEnrichmentRevision(): int { return $this->enrichmentRevision; }
+    public function beginEnrichmentRequest(): int { return ++$this->enrichmentRevision; }
+
     public function __construct(
         Publication $publication,
         VocabularyItem $vocabularyItem,
