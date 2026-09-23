@@ -21,6 +21,7 @@ use App\Nlp\AnalyzedToken;
 use App\Nlp\TextAnalysis;
 use App\Nlp\TextAnalyzerInterface;
 use App\Tests\Double\ConfigurableTextAnalyzer;
+use App\Tests\Double\ConfigurableAsyncEnrichmentGateway as AsyncGateway;
 use App\Tests\Double\ConfigurableVocabularyEnrichmentProvider;
 use Doctrine\ORM\EntityManagerInterface;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -45,6 +46,7 @@ final class PublicationUiTest extends WebTestCase
         $this->resetDatabase();
         ConfigurableTextAnalyzer::$analysis = null;
         ConfigurableVocabularyEnrichmentProvider::reset();
+        AsyncGateway::reset();
     }
 
     public function testPublicationListLoads(): void
@@ -661,13 +663,11 @@ final class PublicationUiTest extends WebTestCase
         self::assertResponseRedirects('/vocabulary/'.$item->getId());
         $this->client->followRedirect();
         self::assertSelectorTextContains('body', 'AI Enrichment');
-        self::assertSelectorTextContains('body', 'niechetny');
-        self::assertSelectorTextContains('body', 'not willing or eager to do something');
-        self::assertSelectorTextContains('body', 'hesitant to enter the cave');
-        self::assertSelectorTextContains('body', 'She was reluctant to speak.');
-        self::assertSelectorTextContains('body', 'B2');
-        self::assertSelectorTextContains('body', 'He was reluctant to enter the cave.');
-        self::assertSame('reluctant', ConfigurableVocabularyEnrichmentProvider::$requests[0]->lemma);
+        self::assertSelectorTextContains('[data-enrichment-status]', 'PROCESSING');
+        self::assertCount(1, AsyncGateway::$published);
+        self::assertCount(0, ConfigurableVocabularyEnrichmentProvider::$requests);
+        self::assertSame(0, $this->countRows('publication_vocabulary_enrichment'));
+        self::assertSame(1, $this->countRows('publication_vocabulary_enrichment_job'));
     }
 
     public function testVocabularyDetailsProviderFailureShowsErrorAndKeepsExistingEnrichment(): void
@@ -677,19 +677,19 @@ final class PublicationUiTest extends WebTestCase
         $this->persistOccurrence($publication, $item, 'reluctant', 'He was reluctant to enter the cave.', 7);
         $this->persistEnrichment($publication, $item, 'existing translation');
         $this->entityManager->flush();
-        ConfigurableVocabularyEnrichmentProvider::$exception = new VocabularyEnrichmentException('Provider unavailable.');
+        AsyncGateway::$failPublish = true;
 
         $crawler = $this->client->request('GET', '/vocabulary/'.$item->getId());
         $this->client->submit($crawler->selectButton('Regenerate')->form());
 
         self::assertResponseRedirects('/vocabulary/'.$item->getId());
         $this->client->followRedirect();
-        self::assertSelectorTextContains('body', 'Provider unavailable.');
+        self::assertSelectorTextContains('[data-enrichment-status]', 'FAILED');
         self::assertSelectorTextContains('body', 'existing translation');
         self::assertSame('existing translation', $this->entityManager->getConnection()->fetchOne('SELECT translation_pl FROM publication_vocabulary_enrichment'));
     }
 
-    public function testBulkVocabularyEnrichmentCreatesSuccessfulRowsAndReportsFailures(): void
+    public function testBulkVocabularyEnrichmentQueuesIndependentJobsAndReportsIneligibleRows(): void
     {
         $publication = $this->persistAnalyzedPublication('Bulk Enrichment');
         $reluctant = $this->persistVocabularyRow($publication, 'reluctant', 'ADJ', 1);
@@ -710,9 +710,44 @@ final class PublicationUiTest extends WebTestCase
 
         self::assertResponseRedirects('/publications/'.$publication->getId());
         $this->client->followRedirect();
-        self::assertSelectorTextContains('body', '2 enrichments generated.');
-        self::assertSelectorTextContains('body', 'Some enrichments failed');
-        self::assertSame(2, $this->countRows('publication_vocabulary_enrichment'));
+        self::assertSelectorTextContains('body', '2 enrichment jobs queued.');
+        self::assertSelectorTextContains('body', 'Some enrichment submissions failed');
+        self::assertSame(0, $this->countRows('publication_vocabulary_enrichment'));
+        self::assertSame(2, $this->countRows('publication_vocabulary_enrichment_job'));
+        self::assertCount(2, AsyncGateway::$published);
+        self::assertNotSame(AsyncGateway::$published[0]['job_id'], AsyncGateway::$published[1]['job_id']);
+        self::assertCount(0, ConfigurableVocabularyEnrichmentProvider::$requests);
+    }
+
+    public function testBulkPublishFailurePreservesQueuedJobsAndContinues(): void
+    {
+        $publication = $this->persistAnalyzedPublication('Bulk partial publication failure');
+        $items = [];
+        foreach (['intervention', 'profound', 'resemblance'] as $lemma) {
+            $item = $this->persistVocabularyRow($publication, $lemma, 'NOUN', 1);
+            $this->persistOccurrence($publication, $item, $lemma, 'The '.$lemma.' mattered.', 0);
+            $items[] = $item->getId();
+        }
+        $this->entityManager->flush();
+        AsyncGateway::$onPublish = static function (): void {
+            if (count(AsyncGateway::$published) === 2) {
+                throw new \RuntimeException('Simulated unconfirmed publication.');
+            }
+        };
+        $crawler = $this->client->request('GET', '/publications/'.$publication->getId());
+        $token = $crawler->filter('form#bulk-status-form input[name="enrichmentToken"]')->attr('value');
+        $this->client->request('POST', '/vocabulary/bulk-enrichment', [
+            'enrichmentToken' => $token, 'publicationId' => $publication->getId(), 'ids' => $items,
+        ]);
+        self::assertResponseRedirects('/publications/'.$publication->getId());
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', '2 enrichment jobs queued.');
+        self::assertSelectorTextContains('body', 'Some enrichment submissions failed');
+        self::assertSame(['PROCESSING', 'FAILED', 'PROCESSING'], $this->entityManager->getConnection()
+            ->fetchFirstColumn('SELECT status FROM publication_vocabulary_enrichment_job ORDER BY id'));
+        self::assertCount(3, AsyncGateway::$published);
+        self::assertCount(0, ConfigurableVocabularyEnrichmentProvider::$requests);
+        self::assertSame(0, $this->countRows('publication_vocabulary_enrichment'));
     }
 
     public function testGenerateLearningCardsCreatesDefaultTypesAndIsIdempotent(): void

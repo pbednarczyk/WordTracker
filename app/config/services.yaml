@@ -1,5 +1,4 @@
 parameters:
-    env(ASYNC_ENRICHMENT_ENABLED): 'false'
     env(ENRICHMENT_INTERNAL_TOKEN): ''
 
 services:
@@ -7,7 +6,6 @@ services:
         autowire: true
         autoconfigure: true
         bind:
-            bool $asyncEnrichmentEnabled: '%env(bool:ASYNC_ENRICHMENT_ENABLED)%'
             string $enrichmentInternalToken: '%env(ENRICHMENT_INTERNAL_TOKEN)%'
             string $nlpHealthUrl: '%env(NLP_HEALTH_URL)%'
             string $nlpBaseUrl: '%env(NLP_BASE_URL)%'

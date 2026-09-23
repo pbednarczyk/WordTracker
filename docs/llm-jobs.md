@@ -1,6 +1,6 @@
 # Phase 2: asynchronous LLM infrastructure
 
-Phase 3A now adds a separate [real application enrichment workflow](async-enrichment.md).
+Phase 3B now runs all UI enrichment through the [real application enrichment workflow](async-enrichment.md).
 The diagnostic API below remains separate. **Never run its FileResultStore consumer
 alongside the production `wordtracker_nlp.enrichment_results` consumer on the same
 `llm.results` queue.** Stop diagnostics before production testing.
@@ -35,7 +35,7 @@ Never commit passwords or tokens.
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `RABBITMQ_ENABLED` | `false` | Enable the diagnostic endpoint/consumer (`true`, `1`, or `yes`) |
+| `RABBITMQ_ENABLED` | `true` in Compose; `false` without configuration | Enable publishing/consumption, including diagnostics (`true`, `1`, or `yes`) |
 | `RABBITMQ_HOST` | `dexter` | External broker hostname; must resolve from the NLP container |
 | `RABBITMQ_PORT` | `5672` | AMQP port |
 | `RABBITMQ_VHOST` | `/wordtracker` | Required isolation boundary; any other value is rejected |
@@ -45,9 +45,10 @@ Never commit passwords or tokens.
 | `LLM_RESULTS_QUEUE` | `llm.results` | Durable classic result queue |
 | `LLM_JOBS_API_TOKEN` | empty | Required secret for internal HTTP submission |
 
-Normal synchronous development needs none of these secrets and makes no broker
-connection at startup. Ollama remains in Compose. RabbitMQ is external, so no
-RabbitMQ service or `depends_on` is added. Queue names may be overridden only if
+The NLP HTTP service makes no broker connection at startup. The normal
+`enrichment-consumer` service does connect and requires configured credentials.
+Ollama is external; WordTracker no longer declares it. RabbitMQ is also external,
+so no RabbitMQ service or `depends_on` is added. Queue names may be overridden only if
 both NLP and the external worker agree.
 
 Pika `1.4.4` is the sole new dependency: its blocking adapter fits the existing
@@ -292,11 +293,11 @@ Normal unit tests mock RabbitMQ and never connect to DEXTER.
    identical result to verify safe duplicate handling. Test malformed messages
    only deliberately: they will be discarded as described above. Stop the
    consumer before inspecting/resolving conflicting results.
-7. Check ordinary `/enrich` still works through the existing Ollama service.
-   Disable diagnostics again if no longer needed; stored files contain model
-   output and can be removed when the test is complete.
+7. Stop the diagnostic consumer before starting the production
+   `enrichment-consumer` service again. `/enrich` is retained only as a legacy API
+   and has no local Ollama supplied by Compose.
 
-Phase 3A now implements Symfony job persistence, async single-item enrichment,
-result application and one repair stage; see the linked guide. Bulk migration,
-UI polling, orchestration/power management, retries/DLQ, and removal of the local
-Ollama service remain outside this phase. Nothing here deploys WordTracker onto DEXTER.
+Phase 3B extends the persisted workflow to bulk UI enrichment, starts the production
+consumer through Compose, and removes local Ollama infrastructure ownership.
+UI polling, orchestration/power management, retries/DLQ and crash reconciliation
+remain outside this phase. Nothing here deploys WordTracker onto DEXTER.

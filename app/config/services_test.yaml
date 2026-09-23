@@ -10,3 +10,8 @@ services:
     App\Enrichment\AsyncEnrichmentGatewayInterface:
         class: App\Tests\Double\ConfigurableAsyncEnrichmentGateway
         public: true
+
+    # Retain direct access for legacy regression tests after UI cutover.
+    App\Application\EnrichPublicationVocabularyHandler:
+        autowire: true
+        public: true

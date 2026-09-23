@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Controller;
 
 use App\Application\AnalyzePublicationHandler;
-use App\Application\EnrichPublicationVocabularyHandler;
 use App\Application\LearningCardGenerationResult;
 use App\Application\LearningCardGenerator;
 use App\Application\PublicationAnalysisException;
@@ -43,7 +42,6 @@ final class PublicationController extends AbstractController
         private readonly VocabularyOccurrenceRepository $vocabularyOccurrenceRepository,
         private readonly EntityManagerInterface $entityManager,
         private readonly AnalyzePublicationHandler $analyzePublication,
-        private readonly EnrichPublicationVocabularyHandler $enrichPublicationVocabulary,
         private readonly LearningCardGenerator $learningCardGenerator,
         private readonly LearningCardRepository $learningCardRepository,
         private readonly VocabularyStatusManager $vocabularyStatusManager,
@@ -52,7 +50,6 @@ final class PublicationController extends AbstractController
         private readonly LoggerInterface $logger,
         private readonly \App\Application\AsyncEnrichmentWorkflow $asyncEnrichment,
         private readonly \App\Repository\PublicationVocabularyEnrichmentJobRepository $enrichmentJobs,
-        private readonly bool $asyncEnrichmentEnabled,
     ) {
     }
 
@@ -230,16 +227,11 @@ final class PublicationController extends AbstractController
         }
 
         try {
-            if ($this->asyncEnrichmentEnabled) {
-                $job = $this->asyncEnrichment->submit($publicationVocabulary);
-                $failed = $job->getStatus() === \App\Enum\EnrichmentJobStatus::FAILED;
-                $this->addFlash($failed ? 'error' : 'success', $failed
-                    ? 'Enrichment could not be queued. Existing enrichment is preserved.'
-                    : ($job->isPending() ? 'Enrichment queued. Refresh this page to see the result.' : 'Enrichment completed.'));
-            } else {
-                ($this->enrichPublicationVocabulary)($publicationVocabulary);
-                $this->addFlash('success', sprintf('Enrichment generated for "%s".', $publicationVocabulary->getVocabularyItem()->getLemma()));
-            }
+            $job = $this->asyncEnrichment->submit($publicationVocabulary);
+            $failed = $job->getStatus() === \App\Enum\EnrichmentJobStatus::FAILED;
+            $this->addFlash($failed ? 'error' : 'success', $failed
+                ? 'Enrichment could not be queued. Existing enrichment is preserved.'
+                : ($job->isPending() ? 'Enrichment queued. Refresh this page to see the result.' : 'Enrichment completed.'));
         } catch (VocabularyEnrichmentException $exception) {
             $this->addFlash('error', $exception->getMessage());
         }
@@ -312,19 +304,23 @@ final class PublicationController extends AbstractController
         $publicationVocabularyRows = $this->publicationVocabularyRepository->findForPublicationAndVocabularyItemIds($publication, $ids);
         foreach ($publicationVocabularyRows as $publicationVocabulary) {
             try {
-                ($this->enrichPublicationVocabulary)($publicationVocabulary);
-                ++$successes;
+                $job = $this->asyncEnrichment->submit($publicationVocabulary);
+                if ($job->getStatus() === \App\Enum\EnrichmentJobStatus::FAILED) {
+                    $failures[] = $publicationVocabulary->getVocabularyItem()->getLemma().': '.($job->getFailure() ?? 'Submission failed.');
+                } else {
+                    ++$successes;
+                }
             } catch (VocabularyEnrichmentException $exception) {
                 $failures[] = $publicationVocabulary->getVocabularyItem()->getLemma().': '.$exception->getMessage();
             }
         }
 
         if ($successes > 0) {
-            $this->addFlash('success', sprintf('%d enrichment%s generated.', $successes, $successes === 1 ? '' : 's'));
+            $this->addFlash('success', sprintf('%d enrichment job%s queued. Refresh later to see the results.', $successes, $successes === 1 ? '' : 's'));
         }
 
         if ($failures !== []) {
-            $this->addFlash('error', 'Some enrichments failed: '.implode('; ', array_slice($failures, 0, 3)));
+            $this->addFlash('error', 'Some enrichment submissions failed: '.implode('; ', array_slice($failures, 0, 3)));
         }
 
         return $this->redirectToPublicationFromRequest($request);

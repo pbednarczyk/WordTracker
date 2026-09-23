@@ -1,6 +1,6 @@
-# Phase 3A: single-item asynchronous enrichment
+# Asynchronous enrichment: Phase 3B cutover
 
-This is an opt-in real application workflow, not the Phase 2 diagnostic endpoint.
+All UI enrichment uses the persisted application workflow, not the Phase 2 diagnostic endpoint.
 Symfony/PostgreSQL is the only durable workflow store. NLP is stateless: it builds
 prompts, parses and validates results, and decides repair/fallback. The worker
 receives the existing generic version-1 envelope only. No worker changes are needed.
@@ -10,7 +10,6 @@ receives the existing generic version-1 envelope only. No worker changes are nee
 Merge these into the root **untracked** `.env`, preserving your broker settings:
 
 ```dotenv
-ASYNC_ENRICHMENT_ENABLED=true
 ASYNC_ENRICHMENT_MODEL=qwen3:14b
 ASYNC_ENRICHMENT_PROVIDER=ollama
 RABBITMQ_ENABLED=true
@@ -18,11 +17,14 @@ ENRICHMENT_APP_BASE_URL=http://nginx-dev
 # Set ENRICHMENT_INTERNAL_TOKEN to a strong local secret, shared by Symfony/NLP.
 ```
 
-`ASYNC_ENRICHMENT_ENABLED` affects only the existing single-item form. Defaults to
-false. Bulk remains synchronous, even when enabled. `ASYNC_ENRICHMENT_MODEL` is
-independent of `OLLAMA_MODEL` and `OLLAMA_BASE_URL`. The provider value identifies
-the inference backend, not RabbitMQ; new records default to `ollama`, because the
-external worker currently uses Ollama. Historical metadata is not changed.
+Generate, Regenerate and Enrich selected always use `AsyncEnrichmentWorkflow`.
+The old `ASYNC_ENRICHMENT_ENABLED` flag is retired and ignored even if a local
+`.env` still contains it. There is no synchronous UI fallback.
+`ASYNC_ENRICHMENT_MODEL` is independent of legacy `OLLAMA_*` settings; no such
+settings are injected by Compose. Provider metadata still defaults to `ollama`,
+identifying the external inference backend, not the transport. Historical records
+are unchanged. RabbitMQ is enabled by default in Compose; an explicit false value
+will fail submissions and prevent consumer operation, not restore synchronous UI.
 
 `ENRICHMENT_INTERNAL_TOKEN` must be supplied locally, never committed. The new
 internal APIs fail closed when unset and require `X-Enrichment-Token`. The old
@@ -61,7 +63,7 @@ than interpreting an old job with silently changed semantics.
 ```text
 Generate / Regenerate form
  → POST /publication-vocabulary/{id}/enrichment (existing CSRF protection)
- → PublicationController::enrichPublicationVocabulary
+ → PublicationController::enrichPublicationVocabulary / bulkEnrichVocabulary
  → AsyncEnrichmentWorkflow::submit
  → EnrichmentRequestFactory (shared eligibility/representative context)
  → lock context, increment revision, persist QUEUED application job, COMMIT
@@ -86,6 +88,15 @@ llm.results
  → HTTP 200 {disposition: applied}
  → result ACK; refresh page to see enrichment
 ```
+
+Bulk validates the existing CSRF token, publication selection and 100-item limit.
+It finds active selected contextual rows and calls `AsyncEnrichmentWorkflow::submit`
+once per eligible row. Each has its own durable application job and LLM UUID.
+Preparation/publication failures produce independent FAILED jobs; ineligible rows
+are reported without a job. Other rows continue. The redirect reports queued jobs
+and submission failures. Neither bulk nor single-item waits for inference. Bulk
+still waits for sequential bounded prepare/publish HTTP calls, so broker/service
+outages or large selections can make submission slow; this is not a batch engine.
 
 Both the context lock and a fresh job read matter: concurrent duplicate requests
 must see the committed state, rather than stale Doctrine identity-map objects.
@@ -156,11 +167,13 @@ UUID not recorded by Symfony will be treated as unknown by the application consu
   These are explicit visible states, not silently missing application jobs.
 - Recovery for stranded QUEUED/PROCESSING jobs is operator inspection followed by
   **Generate/Regenerate again**, which creates a new revision and supersedes the old
-  pending job. Do not manually republish old UUIDs. There is no automatic retry,
-  reconnect loop, deadline, outbox or recovery scheduler in 3A.
+  pending job. Do not manually republish old UUIDs. There is no application retry/reconnect loop, deadline, outbox or job recovery
+  scheduler. Compose process restarts do not reconcile stranded jobs.
 - If Symfony/NLP is unavailable or a database transaction fails during result
   processing, the callback returns 503. The bridge exits, closes its connection,
-  and leaves delivery unacknowledged. Restart it explicitly after fixing the issue.
+  and leaves delivery unacknowledged. Compose restarts the process according to
+  `unless-stopped`; no retry loop was added to the application. Stop the service
+  explicitly while diagnosing a persistent failure, then start it when corrected.
 - Malformed/uncorrelated transport messages are rejected without requeue, as in
   Phase 2. There is no DLQ; such messages are discarded.
 - NLP evaluation is a bounded internal HTTP request while the context transaction
@@ -176,78 +189,59 @@ They compete for messages. Each CLI prints a warning; this is an operational rul
 not a cross-host lock. Stop the diagnostic consumer before production testing.
 The diagnostic endpoint and FileResultStore remain for isolated diagnostic use.
 
-Run one production consumer in a terminal:
+The normal Compose service `enrichment-consumer` runs the existing
+`python -m wordtracker_nlp.enrichment_results` module using the NLP build and code.
+It has no host port and starts no HTTP server. Its `unless-stopped` policy restarts
+an exited process (including after application/broker failure), without adding
+transport retry logic or Phase 3A reconciliation. It depends on both nginx services
+so either supported application callback URL has its startup dependency present.
+Dependency ordering means started, not application readiness; startup failures
+are handled by the restart policy. It uses the existing WordTracker network.
 
-```bash
-docker compose exec -T nlp python -m wordtracker_nlp.enrichment_results
-```
+## Manual verification (operator-run)
 
-It uses the NLP container's RabbitMQ configuration, shared internal token, and
-`ENRICHMENT_APP_BASE_URL`. No automatic consumer starts with the web container.
-
-## Manual end-to-end verification (not performed automatically)
-
-1. On DEXTER verify the already running broker and `/wordtracker` queues. In its
-   existing RabbitMQ runtime, run `rabbitmqctl list_queues -p /wordtracker name
-   messages_ready messages_unacknowledged consumers`. Use its existing deployment
-   tooling; WordTracker does not start or change that broker.
-2. On Silver Monkey, from the standalone worker project's directory:
+1. Ensure the existing DEXTER RabbitMQ `/wordtracker` broker and standalone Silver
+   Monkey dexter-worker/Ollama are running. Do not change either deployment.
+2. Stop any old manually started `enrichment_results` process and the diagnostic
+   `llm_results` consumer before normal startup. Do not start either manually again.
+3. Verify root `.env` contains the existing broker credentials,
+   `RABBITMQ_ENABLED=true`, the shared `ENRICHMENT_INTERNAL_TOKEN`, and the correct
+   `ENRICHMENT_APP_BASE_URL`. Never paste or commit secrets. Phase 3A's migration must
+   already be applied to the intended database; Phase 3B adds no migration and does
+   not automatically migrate application databases.
+4. Start WordTracker normally:
 
    ```bash
+   docker compose config --quiet
+   docker compose up -d
    docker compose ps
-   docker compose logs --tail=50 dexter-worker
-   nvidia-smi
+   docker compose logs -f enrichment-consumer
    ```
 
-   The existing worker and its Ollama must already be running with `qwen3:14b`.
-   If that independent project's service name differs, use its actual service name.
-   Do not pull models or change that project's configuration as part of this test.
-3. Stop the diagnostic consumer with Ctrl-C in its terminal. Verify no diagnostic
-   `python -m wordtracker_nlp.llm_results` process is running elsewhere on the queue.
-4. Set the root `.env` values above, including the shared secret and existing broker
-   credentials. Confirm the intended application database before applying migration:
+   Alternatively use `make start` or `make restart`. Expect `nginx-dev`, `app-dev`,
+   `nginx-prod`, `app-prod`, `db`, `nlp`, and `enrichment-consumer`. The consumer logs
+   `Waiting for enrichment results` after connecting. No current service starts
+   WordTracker Ollama, binds port 11434 or requests GPUs. A previously created,
+   stopped Ollama container may be reported as an orphan; this change does not
+   delete it or the old model volume. Do not use volume deletion or orphan removal
+   as part of this verification.
+5. Open `http://localhost:8080`, choose an analyzed English publication and a word.
+   Click Generate enrichment. Verify PROCESSING/QUEUED, then refresh to see
+   COMPLETED and enrichment. Regenerate follows the same path. A fast worker may
+   complete before the first refresh.
+6. On the publication page select several eligible items and click Enrich selected.
+   Verify the queued count and independent jobs:
 
    ```bash
-   docker compose exec -T app-dev php bin/console doctrine:query:sql 'SELECT current_database()'
-   docker compose exec -T app-dev php bin/console doctrine:migrations:migrate --no-interaction
-   docker compose exec -T app-dev php bin/console doctrine:schema:validate
-   docker compose up -d --no-deps app-dev nlp
+   docker compose exec -T app-dev php bin/console doctrine:query:sql 'SELECT id, publication_vocabulary_id, status, stage, active_llm_job_id, failure FROM publication_vocabulary_enrichment_job ORDER BY id DESC LIMIT 20'
    ```
 
-   These are operator deployment commands, not test setup. Do not substitute the
-   development database for PHPUnit. Existing Ollama remains available for bulk and
-   rollback; this phase has not removed its Compose dependency.
-5. Start the production consumer using the command above. Keep its terminal open.
-6. Open `http://localhost:8080`, choose an analyzed English publication, open a
-   vocabulary detail page, and click the contextual **Generate enrichment** button.
-   The redirect should return without waiting for inference. It normally shows
-   PROCESSING; a very fast result may already show COMPLETED. QUEUED is also visible
-   while preparing/publishing or after an interrupted submission.
-7. Inspect application state without exposing prompt/context text:
+7. Watch `docker compose logs -f enrichment-consumer` for acknowledged job IDs.
+   Refresh later; enrichment badges/details should appear. Failed submissions
+   should not change successful existing enrichment or other submitted jobs.
 
-   ```bash
-   docker compose exec -T app-dev php bin/console doctrine:query:sql 'SELECT id, publication_vocabulary_id, status, stage, active_llm_job_id, model, failure FROM publication_vocabulary_enrichment_job ORDER BY id DESC LIMIT 10'
-   ```
-
-8. Verify `llm.jobs` is consumed using the DEXTER queue inspection command. On Silver
-   Monkey follow `docker compose logs -f dexter-worker` and observe `nvidia-smi`
-   during inference. Confirm the job uses `qwen3:14b`; inference may finish too
-   quickly for a single GPU snapshot.
-9. Verify `llm.results` is consumed by the **production** bridge, not the diagnostic
-   process. Repeat the application job query; expect COMPLETED or a safe failure
-   code. Queue depth alone may miss short-lived messages.
-10. Refresh the vocabulary page. Verify COMPLETED, contextual enrichment fields,
-    model and prompt metadata. Repeat with Regenerate; existing enrichment must
-    remain visible while the replacement is pending. Inspect export/study as needed.
-11. Turn off the single-item flag for rollback and recreate only the app container:
-
-    ```bash
-    # Set ASYNC_ENRICHMENT_ENABLED=false in the root .env first.
-    docker compose up -d --no-deps app-dev
-    ```
-
-    Existing pending jobs may still complete; a newer synchronous request advances
-    the revision and prevents an older async result from overwriting it.
+No second/manual consumer, model pull, GPU setup, broker change or volume deletion
+is needed in WordTracker. The external worker performs all inference.
 
 ## Automated checks
 
@@ -256,11 +250,12 @@ uses a configurable gateway double. The database reset guard requires exactly
 `wordtracker_test`. Run from the repository root:
 
 ```bash
-docker compose exec -T nlp python -m compileall -q wordtracker_nlp
-docker compose exec -T nlp pytest -q
-docker compose exec -T -e APP_ENV=test app-dev php bin/console doctrine:migrations:migrate --env=test --no-interaction
-docker compose exec -T -e APP_ENV=test app-dev ./vendor/bin/phpunit --do-not-cache-result
-docker compose exec -T -e APP_ENV=test app-dev php bin/console doctrine:schema:validate --env=test
+docker compose run --rm --no-deps -T nlp python -m compileall -q wordtracker_nlp
+docker compose run --rm --no-deps -T nlp pytest -q
+docker compose run --rm --no-deps -T -e APP_ENV=test app-dev php bin/console doctrine:migrations:migrate --env=test --no-interaction
+docker compose run --rm --no-deps -T -e APP_ENV=test app-dev ./vendor/bin/phpunit --do-not-cache-result
+docker compose run --rm --no-deps -T -e APP_ENV=test app-dev php bin/console doctrine:schema:validate --env=test
+python3 scripts/test_compose.py
 docker compose config --quiet
 git diff --check
 ```
@@ -269,57 +264,20 @@ The explicit `APP_ENV=test` is required with the existing Docker/PHPUnit bootstr
 Verify `SELECT current_database()` returns `wordtracker_test` before test schema
 operations. The repository's test configuration fixes this database name.
 
-## Remaining scope
+## Remaining scope / DEXTER deployment
 
-Bulk, `/enrich`, the synchronous Symfony provider, `LlmGenerationClient`,
-`OllamaClient`, and the local Ollama stack remain. Page refresh is the only UI
-update mechanism. Phase 3B should close the documented durable-publication recovery
-window with a narrowly scoped dispatch/reconciliation mechanism and operational
-visibility, before retiring synchronous/local Ollama ownership. No power management,
-frontend polling, generic retry/DLQ framework or worker changes belong to 3A.
+Legacy `/enrich`, the synchronous Symfony provider/handler, `LlmGenerationClient`,
+`OllamaClient`/`OllamaConfig` and their tests remain. No normal UI invokes them.
+WordTracker no longer declares an Ollama service or model volume. The old physical
+volume is retained. NLP still owns all parsing, validation, repair and fallback.
 
-## Implementation inventory and verification
+Phase 3A commit/publish crash windows are unchanged. No reconciliation, generic
+retry/DLQ, batch engine, frontend polling, power management or second workflow
+store is introduced. `make start` and `make restart` already operate on the Compose
+service list and need no topology-specific command changes.
 
-Added application files:
-
-- `app/migrations/Version20260923090000.php`
-- `app/src/Entity/PublicationVocabularyEnrichmentJob.php`
-- `app/src/Enum/EnrichmentJobStatus.php`, `EnrichmentJobStage.php`
-- `app/src/Repository/PublicationVocabularyEnrichmentJobRepository.php`
-- `app/src/Application/AsyncEnrichmentWorkflow.php`
-- `app/src/Controller/EnrichmentResultController.php`
-- `app/src/Enrichment/AsyncEnrichmentGatewayInterface.php`, `HttpAsyncEnrichmentGateway.php`,
-  `EnrichmentRequestFactory.php`, `EnrichmentPersister.php`
-- `app/tests/AsyncEnrichmentWorkflowTest.php`,
-  `app/tests/Double/ConfigurableAsyncEnrichmentGateway.php`
-
-Changed application files:
-
-- `app/src/Application/EnrichPublicationVocabularyHandler.php`
-- `app/src/Controller/PublicationController.php`
-- `app/src/Entity/PublicationVocabulary.php`
-- `app/src/Enrichment/VocabularyEnrichmentRequest.php`
-- `app/templates/vocabulary/show.html.twig`
-- `app/config/services.yaml`, `app/config/services_test.yaml`, `app/.env.example`
-
-Added NLP files: `nlp/wordtracker_nlp/async_enrichment.py`,
-`nlp/wordtracker_nlp/enrichment_results.py`, `nlp/tests/test_async_enrichment.py`.
-Changed NLP files: `main.py` (router), `enrichment.py` (shared generation options),
-`llm_results.py` (consumer exclusivity warning).
-
-Added Bruno requests: `App/Generate Publication Vocabulary Enrichment.bru`,
-`App/Apply Async Enrichment Result.bru`, `NLP/Prepare Async Enrichment.bru`,
-`NLP/Publish Prepared Enrichment Job.bru`, `NLP/Evaluate Async Generation.bru`,
-`NLP/Evaluate Async Repair Fallback.bru`. Changed `bruno/environments/Local.bru`
-with a secret-name declaration and nonsecret form placeholders.
-
-Other changes: `docker-compose.yml`, `.env.example`, `.gitignore`, `README.md`,
-`docs/llm-jobs.md`, and this new guide. The root `.env` was not edited.
-
-Implementation verification: 157 Python tests pass; full PHP suite passes with
-128 tests / 1,557 assertions. PHP syntax, Symfony container lint, Python compile,
-Doctrine mapping/database synchronization on `wordtracker_test`, Compose config,
-13 offline Bruno parses, and `git diff --check` pass. The Python test client emits
-an upstream AnyIO deprecation warning. Migration was applied only to
-`wordtracker_test`; the development database was not migrated. No live broker/GPU
-end-to-end test was performed and no services were recreated by this implementation.
+Before moving WordTracker to DEXTER, plan application/database data migration,
+verify Phase 3A schema and broker reachability, inject deployment secrets, choose
+the intended app/nginx callback URL, and ensure only this production consumer
+owns the results queue. The current dual dev/prod Compose setup still shares a
+database and source bind mounts; this phase is not a production deployment redesign.

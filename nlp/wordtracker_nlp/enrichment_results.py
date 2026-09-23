@@ -52,6 +52,7 @@ def consume_results(config, sink, connection_factory=pika.BlockingConnection):
         channel.basic_consume(queue=config.results_queue, auto_ack=False,
             on_message_callback=lambda ch, method, properties, body:
                 process_result(ch, method, properties, body, sink))
+        logger.info("Waiting for enrichment results on queue=%s", config.results_queue)
         channel.start_consuming()
     finally:
         close_connection(connection)

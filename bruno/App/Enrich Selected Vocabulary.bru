@@ -1,0 +1,38 @@
+meta {
+  name: Enrich Selected Vocabulary
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{appBaseUrl}}/vocabulary/bulk-enrichment
+  body: form-urlencoded
+  auth: none
+}
+
+body:form-urlencoded {
+  publicationId: {{publicationId}}
+  enrichmentToken: {{bulkEnrichmentCsrfToken}}
+  ids[]: {{vocabularyItemId1}}
+  ids[]: {{vocabularyItemId2}}
+}
+
+settings {
+  followRedirects: false
+}
+
+assert {
+  res.status: eq 303
+  res.headers.location: isString
+}
+
+docs {
+  CSRF-protected existing bulk UI action. Copy enrichmentToken and use the matching
+  session cookie from the publication page's bulk-status-form. ids[] are GLOBAL
+  VocabularyItem IDs; publicationId resolves their active contextual rows.
+  Select at most 100 IDs. Each eligible contextual row starts the existing async
+  workflow independently. The redirect reports queued count and per-item failures;
+  it does not wait for inference. No synchronous fallback. Empty/over-limit/invalid
+  publication submissions redirect with an error; invalid CSRF returns 403.
+  Run the normal Compose enrichment-consumer and refresh later for results.
+}

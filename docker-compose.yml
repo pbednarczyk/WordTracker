@@ -31,7 +31,6 @@ services:
       NLP_HEALTH_URL: http://nlp:8000/health
       VOCABULARY_ENRICHMENT_BASE_URL: http://nlp:8000
       VOCABULARY_ENRICHMENT_TIMEOUT: "120"
-      ASYNC_ENRICHMENT_ENABLED: ${ASYNC_ENRICHMENT_ENABLED:-false}
       ENRICHMENT_INTERNAL_TOKEN: ${ENRICHMENT_INTERNAL_TOKEN:-}
     volumes:
       - ./app:/var/www/app
@@ -73,7 +72,6 @@ services:
       NLP_HEALTH_URL: http://nlp:8000/health
       VOCABULARY_ENRICHMENT_BASE_URL: http://nlp:8000
       VOCABULARY_ENRICHMENT_TIMEOUT: "120"
-      ASYNC_ENRICHMENT_ENABLED: ${ASYNC_ENRICHMENT_ENABLED:-false}
       ENRICHMENT_INTERNAL_TOKEN: ${ENRICHMENT_INTERNAL_TOKEN:-}
     volumes:
       - ./app:/var/www/app
@@ -102,21 +100,18 @@ services:
       - wordtracker
 
   nlp:
-    build:
+    build: &nlp-build
       context: .
       dockerfile: docker/nlp/Dockerfile
     container_name: wordtracker-nlp
     ports:
       - "8000:8000"
-    environment:
+    environment: &nlp-environment
       ASYNC_ENRICHMENT_MODEL: ${ASYNC_ENRICHMENT_MODEL:-qwen3:14b}
       ASYNC_ENRICHMENT_PROVIDER: ${ASYNC_ENRICHMENT_PROVIDER:-ollama}
       ENRICHMENT_INTERNAL_TOKEN: ${ENRICHMENT_INTERNAL_TOKEN:-}
       ENRICHMENT_APP_BASE_URL: ${ENRICHMENT_APP_BASE_URL:-http://nginx-dev}
-      OLLAMA_BASE_URL: http://ollama:11434
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma3}
-      OLLAMA_TIMEOUT_SECONDS: "120"
-      RABBITMQ_ENABLED: ${RABBITMQ_ENABLED:-false}
+      RABBITMQ_ENABLED: ${RABBITMQ_ENABLED:-true}
       RABBITMQ_HOST: ${RABBITMQ_HOST:-dexter}
       RABBITMQ_PORT: ${RABBITMQ_PORT:-5672}
       RABBITMQ_VHOST: ${RABBITMQ_VHOST:-/wordtracker}
@@ -128,25 +123,20 @@ services:
     volumes:
       - ./nlp:/srv/nlp
       - ./fixtures:/srv/fixtures:ro
-    depends_on:
-      ollama:
-        condition: service_healthy
     networks:
       - wordtracker
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: wordtracker-ollama
-    ports:
-      - "11434:11434"
+  enrichment-consumer:
+    build: *nlp-build
+    container_name: wordtracker-enrichment-consumer
+    command: ["python", "-m", "wordtracker_nlp.enrichment_results"]
+    restart: unless-stopped
+    environment: *nlp-environment
     volumes:
-      - ollama_data:/root/.ollama
-    gpus: all
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 10s
-      timeout: 10s
-      retries: 12
+      - ./nlp:/srv/nlp
+    depends_on:
+      - nginx-dev
+      - nginx-prod
     networks:
       - wordtracker
 
@@ -158,4 +148,3 @@ volumes:
   db_data:
   app_var_dev:
   app_var_prod:
-  ollama_data:

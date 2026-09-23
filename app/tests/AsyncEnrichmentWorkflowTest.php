@@ -295,7 +295,31 @@ final class AsyncEnrichmentWorkflowTest extends WebTestCase
         self::assertSelectorTextContains('body', 'gotowość');
     }
 
-    public function testBulkRemainsSynchronousEvenWithFlagEnabled(): void
+    public function testRetiredFlagCannotRestoreSynchronousUi(): void
+    {
+        $_ENV['ASYNC_ENRICHMENT_ENABLED'] = $_SERVER['ASYNC_ENRICHMENT_ENABLED'] = 'false';
+        $this->testSingleItemUiUsesAsyncAndRefreshShowsState();
+    }
+
+    public function testBulkSelectionLimitAndCsrfArePreserved(): void
+    {
+        $context = $this->context();
+        $crawler = $this->client->request('GET', '/publications/'.$context->getPublication()->getId());
+        $token = $crawler->filter('form#bulk-status-form input[name="enrichmentToken"]')->attr('value');
+        $parameters = ['publicationId' => $context->getPublication()->getId(), 'ids' => range(1, 101), 'enrichmentToken' => $token];
+        $this->client->request('POST', '/vocabulary/bulk-enrichment', $parameters);
+        self::assertResponseRedirects();
+        $this->client->followRedirect();
+        self::assertSelectorTextContains('body', 'Bulk enrichment is limited to 100');
+        self::assertCount(0, Gateway::$published);
+        self::assertCount(0, SyncProvider::$requests);
+        $parameters['enrichmentToken'] = 'invalid';
+        $this->client->request('POST', '/vocabulary/bulk-enrichment', $parameters);
+        self::assertResponseStatusCodeSame(403);
+        self::assertSame(0, (int) $this->entityManager->getConnection()->fetchOne('SELECT COUNT(*) FROM publication_vocabulary_enrichment_job'));
+    }
+
+    public function testBulkUsesExistingAsyncWorkflow(): void
     {
         $context = $this->context();
         SyncProvider::$result = new VocabularyEnrichmentResult('gotowość', 'ready', 'readiness', 'Her willingness helped.');
@@ -304,7 +328,7 @@ final class AsyncEnrichmentWorkflowTest extends WebTestCase
         $this->client->request('POST', '/vocabulary/bulk-enrichment', ['publicationId' => $context->getPublication()->getId(),
             'ids' => [$context->getVocabularyItem()->getId()], 'enrichmentToken' => $token]);
         self::assertResponseRedirects();
-        self::assertCount(1, SyncProvider::$requests);
-        self::assertCount(0, Gateway::$published);
+        self::assertCount(0, SyncProvider::$requests);
+        self::assertCount(1, Gateway::$published);
     }
 }

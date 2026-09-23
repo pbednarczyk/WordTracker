@@ -53,3 +53,9 @@ tests {
     expect(["A1", "A2", "B1", "B2", "C1", "C2", null]).to.include(body.cefr_level);
   });
 }
+
+docs {
+  Legacy synchronous API retained for compatibility/tests. Normal UI enrichment
+  does not call it. WordTracker Compose no longer supplies Ollama or OLLAMA_* settings;
+  this request needs an explicitly configured reachable legacy backend.
+}

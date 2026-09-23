@@ -27,8 +27,9 @@ docs {
   CSRF-protected existing single-item form action. Use the session cookie and hidden
   token from the matching vocabulary detail form; set publicationVocabularyId and
   enrichmentCsrfToken locally. Invalid CSRF returns 403.
-  ASYNC_ENRICHMENT_ENABLED=true creates a durable application job and returns after
+  Always creates a durable application job and returns after
   preparation/publication, without awaiting inference. Refresh the redirected page
   for QUEUED/PROCESSING/FAILED/COMPLETED state. Failures are shown on that page.
-  With the flag false, existing synchronous behavior is preserved. Bulk is unchanged.
+  The old feature flag is ignored; there is no synchronous UI fallback.
+  The Compose enrichment-consumer processes results automatically.
 }
