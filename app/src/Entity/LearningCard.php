@@ -159,6 +159,13 @@ class LearningCard
         return $this->clozeSentence;
     }
 
+    public function refreshContent(string $front, string $back, ?string $contextSentence): void
+    {
+        $this->front = $front;
+        $this->back = $back;
+        $this->contextSentence = $contextSentence;
+    }
+
     public function isActive(): bool
     {
         return $this->isActive;

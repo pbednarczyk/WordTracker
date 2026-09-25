@@ -20,6 +20,7 @@ final readonly class EnrichPublicationVocabularyHandler
         private EnrichmentPersister $persister,
         private VocabularyEnrichmentProviderInterface $provider,
         private EntityManagerInterface $entityManager,
+        private LearningCardGenerator $learningCardGenerator,
     ) {}
 
     public function __invoke(PublicationVocabulary $publicationVocabulary): PublicationVocabularyEnrichment
@@ -41,7 +42,13 @@ final readonly class EnrichPublicationVocabularyHandler
             if ($publicationVocabulary->isDeleted() || $publicationVocabulary->getEnrichmentRevision() !== $revision) {
                 return null;
             }
-            return $this->persister->save($publicationVocabulary, $result, $request->contextSentence);
+            $enrichment = $this->persister->save($publicationVocabulary, $result, $request->contextSentence);
+            // Persist enrichment first, keeping card updates under the same row lock
+            // and transaction so rejected or failed saves cannot refresh cards.
+            $this->entityManager->flush();
+            $this->learningCardGenerator->synchronize($publicationVocabulary);
+
+            return $enrichment;
         });
         if ($enrichment === null) {
             throw new VocabularyEnrichmentException('Enrichment request was superseded or removed.');

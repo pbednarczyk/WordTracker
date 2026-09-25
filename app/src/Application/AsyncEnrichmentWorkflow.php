@@ -23,6 +23,7 @@ final readonly class AsyncEnrichmentWorkflow
         private EnrichmentRequestFactory $requests,
         private EnrichmentPersister $persister,
         private AsyncEnrichmentGatewayInterface $gateway,
+        private LearningCardGenerator $learningCardGenerator,
     ) {}
 
     public function submit(PublicationVocabulary $context): PublicationVocabularyEnrichmentJob
@@ -114,6 +115,10 @@ final readonly class AsyncEnrichmentWorkflow
                 model: $job->getModel(), promptVersion: $job->getPromptVersion(),
             );
             $this->persister->save($job->getPublicationVocabulary(), $enrichment, $job->getRequestSnapshot()['context_sentence']);
+            // Flush enrichment before refreshing cards, under the same context lock
+            // and transaction as completion. Failed saves must not change card content.
+            $this->entityManager->flush();
+            $this->learningCardGenerator->synchronize($job->getPublicationVocabulary());
             $job->complete();
             return null;
         });

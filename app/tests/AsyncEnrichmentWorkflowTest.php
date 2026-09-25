@@ -5,6 +5,12 @@ declare(strict_types=1);
 namespace App\Tests;
 
 use App\Application\AsyncEnrichmentWorkflow;
+use App\Application\LearningCardGenerator;
+use App\Entity\LearningCard;
+use App\Entity\LearningReview;
+use App\Enum\LearningCardType;
+use App\Enum\ReviewRating;
+use PHPUnit\Framework\Attributes\DataProvider;
 use App\Application\EnrichPublicationVocabularyHandler;
 use App\Entity\Publication;
 use App\Entity\PublicationVocabulary;
@@ -47,14 +53,13 @@ final class AsyncEnrichmentWorkflowTest extends WebTestCase
         parent::tearDown();
     }
 
-    private function context(): PublicationVocabulary
+    private function context(?VocabularyItem $item = null, string $sentence = 'His willingness to help impressed everyone.'): PublicationVocabulary
     {
-        $sentence = 'His willingness to help impressed everyone.';
         $publication = new Publication('Async test', PublicationType::ARTICLE, 'en', rawText: $sentence);
         $publication->markAnalyzed();
-        $item = new VocabularyItem('en', 'willingness', 'NOUN');
+        $item ??= new VocabularyItem('en', 'willingness', 'NOUN');
         $context = new PublicationVocabulary($publication, $item, 1);
-        foreach ([$publication, $item, $context, new VocabularyOccurrence($publication, $item, 'willingness', $sentence, 0)] as $entity) {
+        foreach ([$publication, $item, $context, new VocabularyOccurrence($publication, $item, $item->getLemma(), $sentence, 0)] as $entity) {
             $this->entityManager->persist($entity);
         }
         $this->entityManager->flush();
@@ -66,6 +71,159 @@ final class AsyncEnrichmentWorkflowTest extends WebTestCase
         return ['schema_version' => 1, 'type' => 'llm.generate.result', 'job_id' => $job->getActiveLlmJobId(),
             'model' => 'qwen3:14b', 'status' => 'completed', 'response' => '{}', 'error' => null,
             'worker' => 'test-worker', 'completed_at' => '2026-09-23T00:00:00Z'];
+    }
+
+    #[DataProvider('cardActivationStates')]
+    public function testAsyncRegenerationSynchronizesExistingCardsWithoutChangingStudyState(bool $inactiveReverse): void
+    {
+        $context = $this->context(new VocabularyItem('en', 'audience', 'NOUN'), 'An audience waited.');
+        $this->completeEnrichment($context, 'publicum', 'old meaning');
+        $generator = self::getContainer()->get(LearningCardGenerator::class);
+        self::assertSame(3, $generator->generate($context)->created);
+        $cards = $this->entityManager->getRepository(LearningCard::class)->findBy(['publicationVocabulary' => $context]);
+        foreach ($cards as $position => $card) {
+            $card->applyFsrsState(2, 4.5, 6.7, 3, 8, 12, 2, 1,
+                new \DateTimeImmutable('2026-10-01'), new \DateTimeImmutable('2026-09-23'));
+            if ($inactiveReverse && $card->getType() === LearningCardType::REVERSE) {
+                $card->deactivate();
+            }
+            $this->entityManager->persist(new LearningReview($card, ReviewRating::GOOD,
+                new \DateTimeImmutable('2026-09-23'), 1200, 'async-sync-test', $position));
+        }
+        $this->entityManager->flush();
+        $other = $this->context($context->getVocabularyItem(), 'She requested an audience with the king.');
+        $this->completeEnrichment($other, 'audiencja', 'a formal meeting');
+        $generator->generate($other);
+        $before = $this->cardRows();
+        $reviews = $this->entityManager->getConnection()->fetchAllAssociative('SELECT * FROM learning_review ORDER BY id');
+        $newSentence = 'The audience applauded loudly.';
+        $this->entityManager->getConnection()->executeStatement(
+            'UPDATE vocabulary_occurrence SET sentence = ? WHERE publication_id = ?',
+            [$newSentence, $context->getPublication()->getId()],
+        );
+        $contextId = $context->getId();
+        $this->entityManager->clear();
+        $context = $this->entityManager->find(PublicationVocabulary::class, $contextId);
+        $job = $this->workflow->submit($context);
+        self::assertSame($newSentence, $job->getRequestSnapshot()['context_sentence']);
+        self::assertSame($before, $this->cardRows(), 'Submission alone must not refresh cards.');
+        $result = $this->resultEnvelope($job);
+        $result['response'] = json_encode(array_replace(Gateway::content(), [
+            'translation_pl' => 'publiczność', 'meaning_in_context' => 'people watching a performance',
+        ]), JSON_THROW_ON_ERROR);
+        Gateway::$onEvaluate = static fn (array $request): array => [
+            'outcome' => 'COMPLETED',
+            'enrichment' => json_decode($request['result']['response'], true, 512, JSON_THROW_ON_ERROR),
+        ];
+        $jobId = $job->getId();
+        // The callback runs in a separate request, with no managed fixture entities.
+        $this->entityManager->clear();
+        self::assertSame('applied', $this->workflow->accept($result));
+        $job = $this->entityManager->find(PublicationVocabularyEnrichmentJob::class, $jobId);
+        self::assertSame(EnrichmentJobStatus::COMPLETED, $job->getStatus());
+        self::assertSame('publiczność', $job->getPublicationVocabulary()->getEnrichment()->getTranslationPl());
+        $after = $this->cardRows();
+        self::assertCount(6, $after);
+        foreach ($after as $index => $card) {
+            if ((int) $card['publication_vocabulary_id'] !== $contextId || !$card['is_active']) {
+                self::assertSame($before[$index], $card, 'Inactive cards and other contexts must remain untouched.');
+                continue;
+            }
+            $expected = match ($card['type']) {
+                'FORWARD' => ['audience', 'publiczność'],
+                'REVERSE' => ["Recall the target English word:\n\npubliczność", 'audience'],
+                'CONTEXT_MEANING' => ["What does \"audience\" mean in this context?\n\n\"$newSentence\"", 'people watching a performance'],
+            };
+            self::assertSame($expected, [$card['front'], $card['back']]);
+            self::assertSame($newSentence, $card['context_sentence']);
+            $previous = $before[$index];
+            foreach (['front', 'back', 'context_sentence', 'updated_at'] as $field) {
+                unset($card[$field], $previous[$field]);
+            }
+            // Includes IDs, associations, activation, creation time and every FSRS column.
+            self::assertSame($previous, $card);
+        }
+        self::assertSame($reviews, $this->entityManager->getConnection()->fetchAllAssociative('SELECT * FROM learning_review ORDER BY id'));
+        self::assertSame('ignored', $this->workflow->accept($result));
+        self::assertSame($after, $this->cardRows(), 'Duplicate callbacks must not alter cards.');
+        self::assertSame(0, $generator->generate($job->getPublicationVocabulary())->created);
+        self::assertSame($after, $this->cardRows());
+    }
+
+    public static function cardActivationStates(): iterable
+    {
+        yield 'all active' => [false];
+        yield 'inactive reverse' => [true];
+    }
+
+    #[DataProvider('unacceptedResults')]
+    public function testUnacceptedAsyncResultsDoNotSynchronizeCards(string $reason): void
+    {
+        $context = $this->context(new VocabularyItem('en', 'audience', 'NOUN'), 'An audience waited.');
+        $this->completeEnrichment($context, 'publicum', 'old meaning');
+        self::getContainer()->get(LearningCardGenerator::class)->generate($context);
+        $card = $this->entityManager->getRepository(LearningCard::class)->findOneBy(['publicationVocabulary' => $context]);
+        // Deliberately stale content makes an erroneous synchronization observable
+        // even if it uses the unchanged, previously persisted enrichment.
+        $card->refreshContent('earlier front', 'earlier back', 'earlier context');
+        $this->entityManager->flush();
+        $before = $this->cardRows();
+        $job = $this->workflow->submit($context);
+        $result = $this->resultEnvelope($job);
+        switch ($reason) {
+            case 'WORKER_FAILED':
+                $result['status'] = 'failed';
+                $result['response'] = null;
+                $result['error'] = ['code' => 'BACKEND_TIMEOUT', 'message' => 'timeout'];
+                break;
+            case 'MODEL_MISMATCH':
+                $result['model'] = 'other-model';
+                break;
+            case 'INVALID_ENRICHMENT':
+                Gateway::$onEvaluate = static fn () => ['outcome' => 'FAILED', 'failure' => 'INVALID_ENRICHMENT'];
+                break;
+            case 'REPAIR':
+                Gateway::$onEvaluate = static fn () => ['outcome' => 'REPAIR', 'candidate' => Gateway::content(), 'job' => Gateway::message()];
+                break;
+            case 'SUPERSEDED':
+                $this->workflow->submit($context);
+                break;
+            case 'VOCABULARY_REMOVED':
+                $context->softDelete(new \DateTimeImmutable());
+                $this->entityManager->flush();
+                break;
+        }
+        $this->workflow->accept($result);
+        if ($reason === 'REPAIR') {
+            self::assertSame(EnrichmentJobStage::REPAIR, $job->getStage());
+            self::assertSame(EnrichmentJobStatus::PROCESSING, $job->getStatus());
+        } else {
+            self::assertSame($reason, $job->getFailure());
+        }
+        self::assertSame('publicum', $context->getEnrichment()->getTranslationPl());
+        self::assertSame($before, $this->cardRows());
+    }
+
+    public static function unacceptedResults(): iterable
+    {
+        foreach (['WORKER_FAILED', 'REPAIR', 'SUPERSEDED', 'VOCABULARY_REMOVED', 'INVALID_ENRICHMENT', 'MODEL_MISMATCH'] as $reason) {
+            yield $reason => [$reason];
+        }
+    }
+
+    private function completeEnrichment(PublicationVocabulary $context, string $translation, string $meaning): void
+    {
+        Gateway::$onEvaluate = static fn () => ['outcome' => 'COMPLETED', 'enrichment' => array_replace(
+            Gateway::content(), ['translation_pl' => $translation, 'meaning_in_context' => $meaning],
+        )];
+        $job = $this->workflow->submit($context);
+        self::assertSame('applied', $this->workflow->accept($this->resultEnvelope($job)));
+        Gateway::$onEvaluate = null;
+    }
+
+    private function cardRows(): array
+    {
+        return $this->entityManager->getConnection()->fetchAllAssociative('SELECT * FROM learning_card ORDER BY id');
     }
 
     public function testJobAndUuidAreDurableBeforePublishing(): void
