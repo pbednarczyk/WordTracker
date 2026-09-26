@@ -112,6 +112,12 @@ services:
     restart: unless-stopped
     ports:
       - "8000:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
     environment: &nlp-environment
       ASYNC_ENRICHMENT_MODEL: ${ASYNC_ENRICHMENT_MODEL:-qwen3:14b}
       ASYNC_ENRICHMENT_PROVIDER: ${ASYNC_ENRICHMENT_PROVIDER:-ollama}
