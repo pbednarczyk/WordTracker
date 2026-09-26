@@ -2,6 +2,7 @@ services:
   nginx-dev:
     image: nginx:1.27-alpine
     container_name: wordtracker-nginx-dev
+    restart: unless-stopped
     depends_on:
       - app-dev
     ports:
@@ -17,11 +18,12 @@ services:
       context: .
       dockerfile: docker/php/Dockerfile
     container_name: wordtracker-app-dev
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
       nlp:
-        condition: service_started
+        condition: service_healthy
     environment:
       APP_ENV: dev
       APP_DEBUG: "1"
@@ -42,6 +44,7 @@ services:
   nginx-prod:
     image: nginx:1.27-alpine
     container_name: wordtracker-nginx-prod
+    restart: unless-stopped
     depends_on:
       - app-prod
     ports:
@@ -57,6 +60,7 @@ services:
       context: .
       dockerfile: docker/php/Dockerfile
     container_name: wordtracker-app-prod
+    restart: unless-stopped
     depends_on:
       db:
         condition: service_healthy
@@ -83,6 +87,7 @@ services:
   db:
     image: postgres:17-alpine
     container_name: wordtracker-db
+    restart: unless-stopped
     ports:
       - "5432:5432"
     environment:
@@ -104,6 +109,7 @@ services:
       context: .
       dockerfile: docker/nlp/Dockerfile
     container_name: wordtracker-nlp
+    restart: unless-stopped
     ports:
       - "8000:8000"
     environment: &nlp-environment
@@ -129,8 +135,8 @@ services:
   enrichment-consumer:
     build: *nlp-build
     container_name: wordtracker-enrichment-consumer
-    command: ["python", "-m", "wordtracker_nlp.enrichment_results"]
     restart: unless-stopped
+    command: ["python", "-m", "wordtracker_nlp.enrichment_results"]
     environment: *nlp-environment
     volumes:
       - ./nlp:/srv/nlp
